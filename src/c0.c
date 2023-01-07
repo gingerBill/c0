@@ -723,6 +723,7 @@ C0Instr *c0_push_atomic_cas(C0Proc *p, C0Instr *obj, C0Instr *expected, C0Instr 
 	instr->args[1] = c0_use(expected);
 	instr->args[2] = c0_use(desired);
 	instr->basic_type = desired->basic_type;
+	c0_use(instr);
 	return c0_instr_push(p, instr);
 }
 
@@ -735,6 +736,10 @@ C0Instr *c0_push_atomic_bin(C0Proc *p, C0InstrKind kind, C0Instr *dst, C0Instr *
 	instr->args[0] = c0_use(dst);
 	instr->args[1] = c0_use(src);
 	instr->basic_type = src->basic_type;
+	if (kind == C0Instr_atomic_xchg) {
+		instr->basic_type = C0Basic_u8; // boolean
+	}
+	c0_use(instr);
 	return c0_instr_push(p, instr);
 }
 
@@ -762,6 +767,7 @@ C0Instr *c0_push_memmove(C0Proc *p, C0Instr *dst, C0Instr *src, C0Instr *size) {
 	instr->args[0] = c0_use(dst);
 	instr->args[1] = c0_use(src);
 	instr->args[2] = c0_use(size);
+	c0_use(instr);
 	return c0_instr_push(p, instr);
 
 
@@ -775,6 +781,7 @@ C0Instr *c0_push_memset(C0Proc *p, C0Instr *dst, u8 val, C0Instr *size) {
 	instr->args[0] = c0_use(dst);
 	instr->args[1] = c0_use(c0_push_basic_u8(p, val));
 	instr->args[2] = c0_use(size);
+	c0_use(instr);
 	return c0_instr_push(p, instr);
 }
 
