@@ -9,7 +9,7 @@ int main(int argc, char const **argv) {
 	c0_gen_init(&gen);
 
 	C0Proc *p = c0_proc_create(&gen, C0STR("test_proc"));
-	p->basic_type = C0Basic_i32;
+	p->sig = c0_agg_type_proc(&gen, c0_agg_type_basic(&gen, C0Basic_i32), NULL, NULL, 0);
 
 	C0Instr *decl0 = c0_push_decl_basic(p, C0Basic_i8, C0STR("foo"));
 	c0_push_store_basic(p, decl0, c0_push_basic_i8(p, 1));

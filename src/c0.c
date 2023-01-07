@@ -176,7 +176,7 @@ static void c0_platform_virtual_memory_protect(void *memory, isize size);
 		c0_global_platform_memory_block_sentinel.prev = &c0_global_platform_memory_block_sentinel;
 		c0_global_platform_memory_block_sentinel.next = &c0_global_platform_memory_block_sentinel;
 
-		SYSTEM_INFO sys_info = {};
+		SYSTEM_INFO sys_info = {0};
 		GetSystemInfo(&sys_info);
 		usize sys_page_size = sys_info.dwPageSize;
 		if (DEFAULT_PAGE_SIZE < sys_page_size) {
@@ -392,7 +392,7 @@ bool c0_basic_type_is_ptr(C0BasicType type) {
 
 C0AggType *c0_agg_type_basic(C0Gen *gen, C0BasicType type) {
 	C0AggType *t = c0_arena_new(&gen->arena, C0AggType);
-	t->kind = C0Type_basic;
+	t->kind = C0AggType_basic;
 	t->basic.type = type;
 	t->size  = c0_basic_type_size[type];
 	if (t->size < 0) {
@@ -404,7 +404,7 @@ C0AggType *c0_agg_type_basic(C0Gen *gen, C0BasicType type) {
 
 C0AggType *c0_agg_type_proc(C0Gen *gen, C0AggType *ret, C0Array(C0String) names, C0Array(C0AggType *) types, C0ProcFlags flags) {
 	C0AggType *t = c0_arena_new(&gen->arena, C0AggType);
-	t->kind = C0Type_proc;
+	t->kind = C0AggType_proc;
 	t->size = gen->ptr_size;
 	t->align = gen->ptr_size;
 
@@ -417,6 +417,77 @@ C0AggType *c0_agg_type_proc(C0Gen *gen, C0AggType *ret, C0Array(C0String) names,
 	t->proc.flags = flags;
 	return t;
 }
+static bool c0_types_equal(C0AggType *a, C0AggType *b);
+
+static bool c0_types_array_equal(C0Array(C0AggType *) a, C0Array(C0AggType *) b) {
+	if (a == b) {
+		return true;
+	}
+	if (c0array_len(a) != c0array_len(b)) {
+		return false;
+	}
+	usize n = c0array_len(a);
+	for (usize i = 0; i < n; i++) {
+		if (!c0_types_equal(a[i], b[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool c0_strings_equal(C0String a, C0String b) {
+	if (a.len != b.len) {
+		return false;
+	}
+	if (a.text == b.text) {
+		return true;
+	}
+	return memcmp(a.text, b.text, a.len) == 0;
+}
+
+static bool c0_string_array_equal(C0Array(C0String) a, C0Array(C0String) b) {
+	if (a == b) {
+		return true;
+	}
+	if (c0array_len(a) != c0array_len(b)) {
+		return false;
+	}
+	usize n = c0array_len(a);
+	for (usize i = 0; i < n; i++) {
+		if (!c0_strings_equal(a[i], b[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+
+static bool c0_types_equal(C0AggType *a, C0AggType *b) {
+	if (a == b) {
+		return true;
+	}
+	if (a->kind == b->kind) {
+		switch (a->kind) {
+		case C0AggType_basic:
+			return a->basic.type == b->basic.type;
+		case C0AggType_array:
+			return a->array.len == b->array.len && a->array.elem == b->array.elem;
+		case C0AggType_record:
+			return c0_strings_equal(a->record.name, b->record.name);
+		case C0AggType_proc:
+			return c0_types_equal(a->proc.ret, b->proc.ret) &&
+			       c0_types_array_equal(a->proc.types, b->proc.types) &&
+			       a->proc.flags == b->proc.flags;
+
+		}
+	}
+	return false;
+}
+
+static bool c0_types_agg_basic(C0AggType *a, C0BasicType b) {
+	return a && a->kind == C0AggType_basic && a->basic.type == b;
+}
+
 
 C0Proc *c0_proc_create(C0Gen *gen, C0String name) {
 	C0Arena *arena = &gen->arena;
@@ -776,14 +847,15 @@ C0Instr *c0_push_return(C0Proc *p, C0Instr *arg) {
 
 	C0Instr *ret = c0_instr_create(p, C0Instr_return);
 	if (arg != NULL) {
-		if (arg->basic_type != p->basic_type) {
-			c0_errorf("mismatching types: expected %s, got %s\n", c0_basic_names[p->basic_type], c0_basic_names[arg->basic_type]);
+		C0_ASSERT(p->sig);
+		if (!c0_types_agg_basic(p->sig->proc.ret, arg->basic_type)) {
+			c0_errorf("mismatching types: expected ??, got %s\n", /*c0_basic_names[p->basic_type],*/ c0_basic_names[arg->basic_type]);
 		}
 		c0_alloc_args(p, ret, 1);
 		ret->args[0] = c0_use(arg);
 	} else {
-		if (p->basic_type != C0Basic_void) {
-			c0_errorf("mismatching types: expected %s, got %s\n", c0_basic_names[p->basic_type], c0_basic_names[C0Basic_void]);
+		if (!c0_types_agg_basic(p->sig->proc.ret, C0Basic_void)) {
+			c0_errorf("mismatching types: expected void, got %s\n", c0_basic_names[C0Basic_void]);
 		}
 	}
 	return c0_instr_push(p, ret);
@@ -1096,9 +1168,37 @@ void c0_print_indent(usize indent) {
 	}
 }
 
+void c0_print_agg_type(C0AggType *type, C0String name) {
+	switch (type->kind) {
+	case C0AggType_basic:
+		printf("%s", c0_basic_names[type->basic.type]);
+		break;
+
+	case C0AggType_array:
+		c0_print_agg_type(type->array.elem, {0});
+		printf(" (%.*s)[%lld]", C0PSTR(name), (long long)type->array.len);
+		break;
+	case C0AggType_record:
+		c0_errorf("TODO record printing");
+		break;
+	case C0AggType_proc:
+		c0_errorf("TODO proc printing");
+		break;
+	}
+}
+
+
 bool c0_print_instr_type(C0Instr *instr) {
 	if (instr->agg_type) {
-		c0_errorf("TODO complex type printing");
+		switch (instr->agg_type->kind) {
+		case C0AggType_basic:
+			if (instr->agg_type->basic.type == C0Basic_void) {
+				return false;
+			}
+		}
+		C0String empty_name = {0};
+		c0_print_agg_type(instr->agg_type, empty_name);
+		return true;
 	} else if (instr->basic_type != C0Basic_void) {
 		printf("%s", c0_basic_names[instr->basic_type]);
 		return true;
@@ -1388,8 +1488,8 @@ void c0_proc_finish(C0Proc *p) {
 		if (last->kind == C0Instr_if || last->kind == C0Instr_loop) {
 			c0array_push(p->instrs, c0_instr_create(p, C0Instr_unreachable));
 		}
-	} else if (p->basic_type != C0Basic_void) {
-		c0_errorf("procedure missing return statement, expected %s", c0_basic_names[p->basic_type]);
+	} else if (!c0_types_agg_basic(p->sig->proc.ret, C0Basic_void)) {
+		c0_errorf("procedure missing return statement, expected ??");
 	}
 
 	u32 reg_id = 0;
@@ -1398,9 +1498,35 @@ void c0_proc_finish(C0Proc *p) {
 		c0_assign_reg_id(p->instrs[i], &reg_id);
 	}
 }
+void c0_print_sig(C0AggType *sig, C0String name, bool ptr) {
+	// TODO(bill): this is mega wrong
+	C0_ASSERT(sig->kind == C0AggType_proc);
+	C0String empty_string = {0};
+	c0_print_agg_type(sig->proc.ret, empty_string);
+	printf(" %.*s", C0PSTR(name));
+	printf("(");
+	usize n = c0array_len(sig->proc.types);
+	bool print_names = n == c0array_len(sig->proc.names);
+	if (n == 0) {
+		printf("void");
+	} else {
+		for (usize i = 0; i < n; n++) {
+			if (i != 0) {
+				printf(", ");
+			}
+			C0String name = empty_string;
+			if (print_names) {
+				name = sig->proc.names[i];
+			}
+			c0_print_agg_type(sig->proc.types[i], name);
+		}
+	}
+	printf(")");
+	printf(" {\n");
+}
 
 void c0_print_proc(C0Proc *p) {
-	printf("i32 %.*s(void) {\n", C0PSTR(p->name));
+	c0_print_sig(p->sig, p->name, false);
 	for (usize i = 0; i < c0array_len(p->instrs); i++) {
 		c0_print_instr(p->instrs[i], 1, false);
 	}

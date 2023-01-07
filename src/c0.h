@@ -448,24 +448,23 @@ struct C0Instr {
 };
 
 struct C0Proc {
-	C0Arena *        arena;
-	C0Gen *          gen;
-	C0String         name;
-
-	C0BasicType basic_type;
+	C0Arena *  arena;
+	C0Gen *    gen;
+	C0String   name;
+	C0AggType *sig;
 
 	C0Array(C0Instr *) instrs;
 	C0Array(C0Instr *) nested_blocks;
 };
 
-typedef u32 C0TypeKind;
-enum C0TypeKind_enum {
-	C0Type_basic,
-	C0Type_array,
-	C0Type_record,
-	C0Type_proc,
+typedef u32 C0AggTypeKind;
+enum C0AggTypeKind_enum {
+	C0AggType_basic,
+	C0AggType_array,
+	C0AggType_record,
+	C0AggType_proc,
 
-	C0Type_COUNT
+	C0AggType_COUNT
 };
 
 typedef u16 C0ProcCallConv;
@@ -483,7 +482,7 @@ enum C0ProcFlags_enum {
 };
 
 struct C0AggType {
-	C0TypeKind kind;
+	C0AggTypeKind kind;
 	u32        padding0;
 	i64        size;
 	i64        align;
@@ -497,8 +496,10 @@ struct C0AggType {
 			i64        len;
 		} array;
 		struct {
+			C0String name;
 			C0Array(C0String)    names;
 			C0Array(C0AggType *) types;
+			C0Array(i64)         aligns;
 		} record;
 		struct {
 			C0AggType *          ret;
