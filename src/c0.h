@@ -43,6 +43,16 @@ struct C0String {
 #endif
 #endif
 
+#ifndef C0_ASSERT
+#include <assert.h>
+#define C0_ASSERT(cond) assert(cond)
+#endif
+
+#ifndef C0_PANIC
+#define C0_PANIC(msg) C0_ASSERT(0 && msg)
+#endif
+
+
 // printf("%.*s", C0PSTR(s));
 #ifndef C0PSTR
 #define C0PSTR(s) (int)(s).len, (s).text
@@ -150,11 +160,11 @@ char const *c0_arena_cstr_dup(C0Arena *arena, char const *str);
 ///////
 
 
-typedef struct C0Gen   C0Gen;
-typedef struct C0Instr C0Instr;
-typedef struct C0Proc  C0Proc;
-typedef struct C0Type  C0Type;
-typedef struct C0Loc   C0Loc;
+typedef struct C0Gen     C0Gen;
+typedef struct C0Instr   C0Instr;
+typedef struct C0Proc    C0Proc;
+typedef struct C0AggType C0AggType;
+typedef struct C0Loc     C0Loc;
 
 typedef u8 C0BasicType;
 enum C0BasicType_enum {
@@ -214,7 +224,7 @@ static char const *const c0_basic_names[C0Basic_COUNT] = {
 };
 
 
-typedef u8 C0InstrKind;
+typedef u16 C0InstrKind;
 enum C0InstrKind_enum {
 	C0Instr_invalid,
 
@@ -303,6 +313,7 @@ enum C0InstrKind_enum {
 	C0Instr_continue,
 	C0Instr_break,
 	C0Instr_return,
+	C0Instr_unreachable,
 	C0Instr_goto,
 	C0Instr_label,
 
@@ -334,10 +345,14 @@ static char const *const c0_instr_names[C0Instr_COUNT] = {
 	"xor",
 	"eq",
 	"neq",
-	"lt",
-	"gt",
-	"lteq",
-	"gteq",
+	"lti",
+	"ltu",
+	"gti",
+	"gtu",
+	"lteqi",
+	"ltequ",
+	"gteqi",
+	"gtequ",
 
 	"addf",
 	"subf",
@@ -382,6 +397,7 @@ static char const *const c0_instr_names[C0Instr_COUNT] = {
 	"continue",
 	"break",
 	"return",
+	"unreachable",
 	"goto",
 	"label",
 };
@@ -390,9 +406,11 @@ struct C0Gen {
 	C0String name;
 	C0Arena  arena;
 
-	C0Array(C0String) files;
-	C0Array(C0Type *) types;
-	C0Array(C0Proc *) procs;
+	i64 ptr_size;
+
+	C0Array(C0String)    files;
+	C0Array(C0AggType *) types;
+	C0Array(C0Proc *)    procs;
 };
 
 struct C0Loc {
@@ -404,13 +422,15 @@ struct C0Loc {
 struct C0Instr {
 	C0InstrKind kind;
 	C0BasicType basic_type;
+	u16         padding0;
 	u32         uses;
-	C0Type *    type;
 	C0Instr *   parent;
+
+	C0AggType *agg_type;
 
 	u32      id;
 	C0String name;
-	C0Proc  *proc;
+	C0Proc  *call_proc;
 
 	C0Instr **args;
 	usize     args_len;
@@ -432,36 +452,62 @@ struct C0Proc {
 	C0Gen *          gen;
 	C0String         name;
 
+	C0BasicType basic_type;
+
 	C0Array(C0Instr *) instrs;
 	C0Array(C0Instr *) nested_blocks;
 };
 
 typedef u32 C0TypeKind;
 enum C0TypeKind_enum {
-	C0Type_invalid,
-
 	C0Type_basic,
 	C0Type_array,
 	C0Type_record,
+	C0Type_proc,
 
 	C0Type_COUNT
 };
 
-struct C0Type {
+typedef u16 C0ProcCallConv;
+enum C0ProcCallConv_enum {
+	C0ProcCallConv_cdecl,
+	C0ProcCallConv_stdcall,
+	C0ProcCallConv_fastcall,
+};
+typedef u16 C0ProcFlags;
+enum C0ProcFlags_enum {
+	C0ProcFlag_diverging     = 1<<0,
+	C0ProcFlag_variadic      = 1<<1,
+	C0ProcFlag_always_inline = 1<<2, // should not be needed in the future
+	C0ProcFlag_never_inline  = 1<<3,
+};
+
+struct C0AggType {
 	C0TypeKind kind;
-	i64 size;
-	i64 align;
+	u32        padding0;
+	i64        size;
+	i64        align;
 
 	union {
 		struct {
-			C0Type *elem;
-			i64     len;
+			C0BasicType type;
+		} basic;
+		struct {
+			C0AggType *elem;
+			i64        len;
 		} array;
 		struct {
-			C0String *names;
-			C0Type *  types;
-			isize     fields_len;
+			C0Array(C0String)    names;
+			C0Array(C0AggType *) types;
 		} record;
+		struct {
+			C0AggType *          ret;
+			C0Array(C0String)    names;
+			C0Array(C0AggType *) types;
+
+			C0ProcCallConv call_conv;
+			C0ProcFlags    flags;
+		} proc;
 	};
 };
 
