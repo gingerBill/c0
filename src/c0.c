@@ -1,16 +1,16 @@
 #include "c0.h"
 #include <stdlib.h>
 
-#if !defined(GB_NO_WINDOWS_H)
+#if !defined(C0_NO_WINDOWS_H)
 	#define NOMINMAX            1
-	#if !defined(GB_WINDOWS_H_INCLUDED)
+	#if !defined(C0_WINDOWS_H_INCLUDED)
 	#define WIN32_LEAN_AND_MEAN 1
 	#define WIN32_MEAN_AND_LEAN 1
 	#define VC_EXTRALEAN        1
 	#endif
 	#include <windows.h>
 	#undef NOMINMAX
-	#if !defined(GB_WINDOWS_H_INCLUDED)
+	#if !defined(C0_WINDOWS_H_INCLUDED)
 	#undef WIN32_LEAN_AND_MEAN
 	#undef WIN32_MEAN_AND_LEAN
 	#undef VC_EXTRALEAN
@@ -297,6 +297,19 @@ static void c0_virtual_memory_dealloc(C0MemoryBlock *block_to_free) {
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+#ifndef C0_DEBUG_TRAP
+	#if defined(_MSC_VER)
+	 	#if _MSC_VER < 1300
+		#define C0_DEBUG_TRAP() __asm int 3 /* Trap to debugger! */
+		#else
+		#define C0_DEBUG_TRAP() __debugbreak()
+		#endif
+	#else
+		#define C0_DEBUG_TRAP() __builtin_trap()
+	#endif
+#endif
+
+
 static void c0_warning(char const *msg) {
 	fputs("WARNING: ", stderr);
 	fputs(msg, stderr);
@@ -311,7 +324,7 @@ static void c0_errorf(char const *fmt, ...) {
 	vfprintf(stderr, fmt, va);
 	va_end(va);
 	fputs("\n", stderr);
-	exit(1);
+	C0_DEBUG_TRAP();
 }
 
 void c0_gen_init(C0Gen *gen) {
@@ -390,15 +403,33 @@ bool c0_basic_type_is_ptr(C0BasicType type) {
 	return false;
 }
 
+i64 c0_basic_type_size(C0Gen *gen, C0BasicType type) {
+	i64 size = c0_basic_type_sizes[type];
+	if (size < 0) {
+		size = (-size) * gen->ptr_size;
+	}
+	return size;
+}
+
+
 C0AggType *c0_agg_type_basic(C0Gen *gen, C0BasicType type) {
 	C0AggType *t = c0_arena_new(&gen->arena, C0AggType);
 	t->kind = C0AggType_basic;
 	t->basic.type = type;
-	t->size  = c0_basic_type_size[type];
-	if (t->size < 0) {
-		t->size = (-t->size) * gen->ptr_size;
-	}
+	t->size  = c0_basic_type_size(gen, type);
 	t->align = t->size;
+	return t;
+}
+
+C0AggType *c0_agg_type_array(C0Gen *gen, C0AggType *elem, i64 len) {
+	C0_ASSERT(len >= 0);
+	C0AggType *t = c0_arena_new(&gen->arena, C0AggType);
+	t->kind = C0AggType_array;
+	t->array.elem = elem;
+	t->array.len = len;
+	// TODO(bill): size of the array
+	t->size  = len * elem->size;
+	t->align = elem->align;
 	return t;
 }
 
@@ -781,6 +812,8 @@ C0_PUSH_BIN_DEF(gtf);
 C0_PUSH_BIN_DEF(lteqf);
 C0_PUSH_BIN_DEF(gteqf);
 
+#undef C0_PUSH_BIN_DEF
+
 C0Instr *c0_push_negf(C0Proc *p, C0Instr *arg) {
 	C0Instr *val = c0_instr_create(p, C0Instr_negf);
 	c0_alloc_args(p, val, 1);
@@ -849,13 +882,13 @@ C0Instr *c0_push_return(C0Proc *p, C0Instr *arg) {
 	if (arg != NULL) {
 		C0_ASSERT(p->sig);
 		if (!c0_types_agg_basic(p->sig->proc.ret, arg->basic_type)) {
-			c0_errorf("mismatching types: expected ??, got %s\n", /*c0_basic_names[p->basic_type],*/ c0_basic_names[arg->basic_type]);
+			c0_errorf("mismatching types in return: expected ??, got %s\n", /*c0_basic_names[p->basic_type],*/ c0_basic_names[arg->basic_type]);
 		}
 		c0_alloc_args(p, ret, 1);
 		ret->args[0] = c0_use(arg);
 	} else {
 		if (!c0_types_agg_basic(p->sig->proc.ret, C0Basic_void)) {
-			c0_errorf("mismatching types: expected void, got %s\n", c0_basic_names[C0Basic_void]);
+			c0_errorf("mismatching types in return: expected void, got %s\n", c0_basic_names[C0Basic_void]);
 		}
 	}
 	return c0_instr_push(p, ret);
@@ -908,6 +941,52 @@ C0Instr *c0_push_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
 	return c0_instr_push(p, instr);
 }
 
+C0Instr *c0_push_copy_basic(C0Proc *p, C0Instr *arg) {
+	C0_ASSERT(arg->basic_type != C0Basic_void);
+	C0Instr *instr = c0_instr_create(p, C0Instr_decl);
+	instr->basic_type = arg->basic_type;
+	c0_instr_push(p, instr);
+	c0_push_store_basic(p, instr, arg);
+	return instr;
+}
+
+
+C0Instr *c0_push_unaligned_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
+	C0_ASSERT(src->basic_type != C0Basic_void);
+	if (dst->kind == C0Instr_decl) {
+		C0_ASSERT(dst->basic_type == src->basic_type);
+		dst = c0_push_addr_of_decl(p, dst);
+	}
+	C0_ASSERT(dst->basic_type == C0Basic_ptr);
+	i64 size = c0_basic_type_size(p->gen, src->basic_type);
+	if (src->kind != C0Instr_decl) {
+		src = c0_push_copy_basic(p, src);
+	}
+	src = c0_push_addr_of_decl(p, src);
+
+	C0Instr *len = c0_push_basic_i32(p, (i32)size);
+	return c0_push_memmove(p, dst, src, len);
+}
+C0Instr *c0_push_volatile_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
+	return c0_push_unaligned_store_basic(p, dst, src);
+}
+C0Instr *c0_push_unaligned_load_basic(C0Proc *p, C0BasicType type, C0Instr *ptr) {
+	if (ptr->kind == C0Instr_decl) {
+		C0_ASSERT(type == ptr->basic_type);
+		ptr = c0_push_addr_of_decl(p, ptr);
+	}
+	C0_ASSERT(ptr->basic_type == C0Basic_ptr);
+
+	C0Instr *val = c0_push_decl_basic(p, type, {0});
+	C0Instr *val_ptr = c0_push_addr_of_decl(p, val);
+	i64 size = c0_basic_type_size(p->gen, type);
+	C0Instr *len = c0_push_basic_i32(p, (i32)size);
+	c0_push_memmove(p, val_ptr, ptr, len);
+	return val;
+}
+C0Instr *c0_push_volatile_load_basic(C0Proc *p, C0BasicType type, C0Instr *ptr) {
+	return c0_push_unaligned_load_basic(p, type, ptr);
+}
 
 
 
@@ -1025,6 +1104,17 @@ C0Instr *c0_push_decl_basic(C0Proc *p, C0BasicType type, C0String name) {
 	return c0_instr_push(p, instr);
 }
 
+C0Instr *c0_push_decl_agg(C0Proc *p, C0AggType *type, C0String name) {
+	C0_ASSERT(type);
+	if (type->kind == C0AggType_basic) {
+		return c0_push_decl_basic(p, type->basic.type, name);
+	}
+	C0Instr *instr = c0_instr_create(p, C0Instr_decl);
+	instr->name = name;
+	instr->agg_type = type;
+	return c0_instr_push(p, instr);
+}
+
 C0Instr *c0_push_select_basic(C0Proc *p, C0Instr *cond, C0Instr *true_case, C0Instr *false_case) {
 	C0_ASSERT(c0_basic_type_is_integer(cond->basic_type));
 
@@ -1072,6 +1162,13 @@ C0Instr *c0_push_label(C0Proc *p, C0String name) {
 	// TODO(bill): make name unique if it isn't
 	C0Instr *instr = c0_instr_create(p, C0Instr_label);
 	instr->name = c0_arena_str_dup(p->arena, name);
+	usize n = c0array_len(p->labels);
+	for (usize i = 0; i < n; i++) {
+		if (!c0_strings_equal(p->labels[i]->name, name)) {
+			c0_errorf("non-unique label names: %.*s", C0PSTR(name));
+		}
+	}
+	c0array_push(p->labels, instr);
 	return c0_instr_push(p, instr);
 }
 
@@ -1087,6 +1184,7 @@ C0Instr *c0_push_if(C0Proc *p, C0Instr *cond) {
 	c0_alloc_args(p, block, 2); // one for possible else
 	block->args_len = 1;
 	block->args[0] = c0_use(cond);
+	C0_ASSERT(c0_basic_type_is_integer(cond->basic_type));
 
 	c0_use(block);
 
@@ -1215,6 +1313,123 @@ void c0_print_instr_arg(C0Instr *instr) {
 	}
 }
 
+static char *strf(char const *fmt, ...) {
+	char *str = NULL;
+	va_list va;
+	va_start(va, fmt);
+	usize n = 1 + vsnprintf(NULL, 0, fmt, va);
+	va_end(va);
+	if (n) {
+		str = (char *)calloc(1, n); // TODO(bill): make this use an arena
+		va_start(va, fmt);
+		vsnprintf(str, n, fmt, va);
+		va_end(va);
+	}
+	return str;
+}
+static char const *c0_cdecl_paren(char const *str, char c) {
+	return c && c != '[' ? strf("(%s)", str) : str;
+}
+static char const *c0_string_to_cstr(C0String str) {
+	char *c = (char *)calloc(1, str.len+1);
+	memmove(c, str.text, str.len);
+	return c;
+}
+
+char *str_buf_printf(C0Array(char) *array, char const *fmt, ...) {
+	va_list va;
+	va_start(va, fmt);
+	usize n = 1 + vsnprintf(NULL, 0, fmt, va);
+	va_end(va);
+	usize old_len = c0array_len(*array);
+	usize new_len = old_len + n;
+	c0array_resize(*array, new_len);
+
+	va_start(va, fmt);
+	vsnprintf(&(*array)[old_len], n, fmt, va);
+	va_end(va);
+	c0array_meta(*array)->len -= 1; // ignore NUL
+	return *array;
+}
+
+static char *c0_type_to_cdecl_internal(C0AggType *type, char const *str, bool ignore_proc_ptr);
+static char *c0_type_to_cdecl(C0AggType *type, char const *str) {
+	return c0_type_to_cdecl_internal(type, str, false);
+}
+static char *c0_type_to_cdecl_internal(C0AggType *type, char const *str, bool ignore_proc_ptr) {
+	switch (type->kind) {
+	case C0AggType_basic:
+		if (type->basic.type == C0Basic_ptr) {
+			return strf("void%s%s", *str ? " " : "", c0_cdecl_paren(strf("*%s", str), *str));
+		} else {
+			char const *s = c0_basic_names[type->basic.type];
+			return strf("%s%s%s", s, *str ? " " : "", str);
+		}
+	case C0AggType_array:
+		return c0_type_to_cdecl(type->array.elem, c0_cdecl_paren(strf("%s[%llu]", str, (unsigned long long)type->array.len), *str));
+	case C0AggType_record:
+		C0_ASSERT(type->record.name.len != 0);
+		return strf("%.*s", C0PSTR(type->record.name));
+	case C0AggType_proc:
+		{
+			C0Array(char) buf = NULL;
+			if (ignore_proc_ptr) {
+				str_buf_printf(&buf, "%s(", str);
+			} else {
+				str_buf_printf(&buf, "(*%s)(", str);
+			}
+			usize n = c0array_len(type->proc.types);
+			if (n == 0)  {
+				str_buf_printf(&buf, "void)");
+			} else {
+				for (usize i = 0; i < n; i++) {
+					C0AggType *pt = type->proc.types[i];
+					if (i != 0) {
+						str_buf_printf(&buf, ", ");
+					}
+					str_buf_printf(&buf, "%s", c0_type_to_cdecl(pt, ""));
+				}
+				if (type->proc.flags & C0ProcFlag_variadic) {
+					str_buf_printf(&buf, ", ...");
+				}
+				str_buf_printf(&buf, ")");
+			}
+			char *result = c0_type_to_cdecl(type->proc.ret, buf);
+			c0array_delete(buf);
+			return result;
+		}
+	}
+	C0_PANIC("invalid type");
+	return NULL;
+}
+void c0_print_instr_creation(C0Instr *instr) {
+	if (instr->agg_type) {
+		switch (instr->agg_type->kind) {
+		case C0AggType_basic:
+			if (instr->agg_type->basic.type != C0Basic_void) {
+				printf("%s ", c0_basic_names[instr->basic_type]);
+				c0_print_instr_arg(instr);
+				printf(" = ");
+			}
+			return;
+		}
+		char const *name = NULL;
+		if (instr->name.len != 0) {
+			name = c0_string_to_cstr(instr->name);
+		} else {
+			name = strf("r%u", instr->id);
+		}
+		printf("%s = ", c0_type_to_cdecl(instr->agg_type, name));
+	} else if (instr->basic_type != C0Basic_void) {
+		printf("%s", c0_basic_names[instr->basic_type]);
+		if (instr->basic_type != C0Basic_ptr) {
+			printf(" ");
+		}
+		c0_print_instr_arg(instr);
+		printf(" = ");
+	}
+}
+
 
 void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) {
 	C0_ASSERT(instr != NULL);
@@ -1288,13 +1503,9 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 		return;
 	}
 
-	if (c0_print_instr_type(instr)) {
-		printf(" ");
-		c0_print_instr_arg(instr);
-		printf(" = ");
-	}
+	c0_print_instr_creation(instr);
 
-	i32 byte_size = 8*c0_basic_type_size[instr->basic_type];
+	i32 byte_size = 8*c0_basic_type_sizes[instr->basic_type];
 
 	switch (instr->kind) {
 	default:
@@ -1367,7 +1578,7 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 
 	case C0Instr_cvt:
 		C0_ASSERT(instr->args_len == 1);
-		printf("cvt_%s_to_%s", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
+		printf("_C0_cvt_%s_to_%s", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
 		break;
 
 	case C0Instr_negf:
@@ -1408,26 +1619,24 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 	case C0Instr_gtf:
 	case C0Instr_lteqf:
 	case C0Instr_gteqf:
-		printf("%s%d", c0_instr_names[instr->basic_type], byte_size);
+		printf("_C0_%s%d", c0_instr_names[instr->kind], byte_size);
 		break;
 
 	case C0Instr_atomic_thread_fence:
 	case C0Instr_atomic_signal_fence:
 	case C0Instr_memmove:
 	case C0Instr_memset:
-		printf("%s", c0_instr_names[instr->basic_type]);
+		printf("%s", c0_instr_names[instr->kind]);
 		break;
 
 	case C0Instr_select:
 		C0_ASSERT(instr->args_len == 3);
-		printf("(");
 		c0_print_instr_arg(instr->args[0]);
-		printf(") ? (");
+		printf(" ? ");
 		c0_print_instr_arg(instr->args[1]);
-		printf(") : ");
-		printf("(");
+		printf(" : ");
 		c0_print_instr_arg(instr->args[2]);
-		printf(");\n");
+		printf(";\n");
 		return;
 
 	}
@@ -1452,6 +1661,9 @@ void c0_assign_reg_id(C0Instr *instr, u32 *reg_id_) {
 		for (usize i = 0; i < c0array_len(instr->nested_instrs); i++) {
 			c0_assign_reg_id(instr->nested_instrs[i], reg_id_);
 		}
+	}
+	if (instr->kind == C0Instr_if && instr->args_len == 2) {
+		c0_assign_reg_id(instr->args[1], reg_id_);
 	}
 }
 
@@ -1526,7 +1738,7 @@ void c0_print_sig(C0AggType *sig, C0String name, bool ptr) {
 }
 
 void c0_print_proc(C0Proc *p) {
-	c0_print_sig(p->sig, p->name, false);
+	printf("%s {\n", c0_type_to_cdecl_internal(p->sig, c0_string_to_cstr(p->name), true));
 	for (usize i = 0; i < c0array_len(p->instrs); i++) {
 		c0_print_instr(p->instrs[i], 1, false);
 	}

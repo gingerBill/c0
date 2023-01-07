@@ -187,7 +187,7 @@ enum C0BasicType_enum {
 	C0Basic_COUNT
 };
 
-static i32 const c0_basic_type_size[C0Basic_COUNT] = {
+static i32 const c0_basic_type_sizes[C0Basic_COUNT] = {
 	0  /* void */,
 	1  /* i8   */,
 	1  /* u8   */,
@@ -455,6 +455,7 @@ struct C0Proc {
 
 	C0Array(C0Instr *) instrs;
 	C0Array(C0Instr *) nested_blocks;
+	C0Array(C0Instr *) labels;
 };
 
 typedef u32 C0AggTypeKind;
@@ -521,5 +522,46 @@ C0Proc * c0_proc_create (C0Gen *gen, C0String name);
 C0Instr *c0_instr_create(C0Proc *p,  C0InstrKind kind);
 C0Instr *c0_instr_push  (C0Proc *p,  C0Instr *instr);
 
+
+C0Instr *c0_push_nested_block(C0Proc *p, C0Instr *block);
+C0Instr *c0_push_basic_i8(C0Proc *p, i8 value);
+C0Instr *c0_push_basic_u8(C0Proc *p, u8 value);
+C0Instr *c0_push_basic_i16(C0Proc *p, i16 value);
+C0Instr *c0_push_basic_u16(C0Proc *p, u16 value);
+C0Instr *c0_push_basic_i32(C0Proc *p, i32 value);
+C0Instr *c0_push_basic_u32(C0Proc *p, u32 value);
+C0Instr *c0_push_basic_i64(C0Proc *p, i64 value);
+C0Instr *c0_push_basic_u64(C0Proc *p, u64 value);
+C0Instr *c0_push_basic_ptr(C0Proc *p, u64 value);
+C0Instr *c0_push_bin(C0Proc *p, C0InstrKind kind, C0Instr *left, C0Instr *right);
+
+C0Instr *c0_push_negf(C0Proc *p, C0Instr *arg);
+C0Instr *c0_push_noti(C0Proc *p, C0Instr *arg);
+C0Instr *c0_push_notb(C0Proc *p, C0Instr *arg);
+C0Instr *c0_push_unreachable(C0Proc *p);
+C0Instr *c0_push_return(C0Proc *p, C0Instr *arg);
+C0Instr *c0_push_convert(C0Proc *p, C0BasicType type, C0Instr *arg);
+C0Instr *c0_push_load_basic(C0Proc *p, C0BasicType type, C0Instr *arg);
+C0Instr *c0_push_addr_of_decl(C0Proc *p, C0Instr *decl);
+C0Instr *c0_push_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src);
+C0Instr *c0_push_copy_basic(C0Proc *p, C0Instr *arg);
+C0Instr *c0_push_unaligned_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src);
+C0Instr *c0_push_atomic_thread_fence(C0Proc *p);
+C0Instr *c0_push_atomic_signal_fence(C0Proc *p);
+C0Instr *c0_push_atomic_load_basic(C0Proc *p, C0BasicType type, C0Instr *arg);
+C0Instr *c0_push_atomic_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src);
+C0Instr *c0_push_atomic_cas(C0Proc *p, C0Instr *obj, C0Instr *expected, C0Instr *desired);
+C0Instr *c0_push_atomic_bin(C0Proc *p, C0InstrKind kind, C0Instr *dst, C0Instr *src);
+
+C0Instr *c0_push_memmove(C0Proc *p, C0Instr *dst, C0Instr *src, C0Instr *size);
+C0Instr *c0_push_memset(C0Proc *p, C0Instr *dst, u8 val, C0Instr *size);
+C0Instr *c0_push_decl_basic(C0Proc *p, C0BasicType type, C0String name);
+C0Instr *c0_push_select_basic(C0Proc *p, C0Instr *cond, C0Instr *true_case, C0Instr *false_case);
+C0Instr *c0_push_continue(C0Proc *p);
+C0Instr *c0_push_break(C0Proc *p);
+C0Instr *c0_push_goto(C0Proc *p, C0Instr *label);
+C0Instr *c0_push_label(C0Proc *p, C0String name);
+C0Instr *c0_push_if(C0Proc *p, C0Instr *cond);
+C0Instr *c0_push_loop(C0Proc *p);
 
 #endif /*C0_HEADER_DEFINE*/
