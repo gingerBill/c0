@@ -735,90 +735,62 @@ static void c0_alloc_args(C0Proc *p, C0Instr *instr, isize len) {
 C0Instr *c0_push_bin(C0Proc *p, C0InstrKind kind, C0Instr *left, C0Instr *right) {
 	C0_ASSERT(left);
 	C0_ASSERT(right);
+	C0_ASSERT(left->basic_type != C0Basic_void);
 	C0_ASSERT(left->basic_type == right->basic_type);
 
 	C0Instr *bin = c0_instr_create(p, kind);
-	bin->basic_type = left->basic_type;
-
-	switch (bin->basic_type) {
-	case C0Basic_i8:
-	case C0Basic_u8:
-	case C0Basic_i16:
-	case C0Basic_u16:
-	case C0Basic_i32:
-	case C0Basic_u32:
-	case C0Basic_i64:
-	case C0Basic_u64:
-	case C0Basic_i128:
-	case C0Basic_u128:
-		// check
-		break;
-	case C0Basic_f16:
-	case C0Basic_f32:
-	case C0Basic_f64:
-		// check
-		break;
-	case C0Basic_ptr:
-		// check
-		break;
-	default:
-		c0_errorf("invalid type for c0_instr_bin");
-		break;
-	}
-
+	bin->basic_type = c0_instr_ret_type[kind];
 	c0_alloc_args(p, bin, 2);
 	bin->args[0] = c0_use(left);
 	bin->args[1] = c0_use(right);
 	return c0_instr_push(p, bin);
 }
 
-// TODO(bill): remove the macro
-#define C0_PUSH_BIN_DEF(name) C0Instr *c0_push_##name(C0Proc *p, C0Instr *left, C0Instr *right) { \
-	return c0_push_bin(p, C0Instr_##name, left, right); \
+#define C0_PUSH_BIN_INT_DEF(name) C0Instr *c0_push_##name(C0Proc *p, C0Instr *left, C0Instr *right) { \
+	C0_ASSERT(c0_basic_type_is_integer(left->basic_type)); \
+	return c0_push_bin(p, C0Instr_##name##_i8 + (left->basic_type - C0Basic_i8), left, right); \
 }
 
-C0_PUSH_BIN_DEF(add);
-C0_PUSH_BIN_DEF(sub);
-C0_PUSH_BIN_DEF(mul);
-C0_PUSH_BIN_DEF(quoi);
-C0_PUSH_BIN_DEF(quou);
-C0_PUSH_BIN_DEF(remi);
-C0_PUSH_BIN_DEF(remu);
-C0_PUSH_BIN_DEF(shli);
-C0_PUSH_BIN_DEF(shlu);
-C0_PUSH_BIN_DEF(shri);
-C0_PUSH_BIN_DEF(shru);
+C0_PUSH_BIN_INT_DEF(add);
+C0_PUSH_BIN_INT_DEF(sub);
+C0_PUSH_BIN_INT_DEF(mul);
+C0_PUSH_BIN_INT_DEF(quo);
+C0_PUSH_BIN_INT_DEF(rem);
+C0_PUSH_BIN_INT_DEF(shl);
+C0_PUSH_BIN_INT_DEF(shr);
+C0_PUSH_BIN_INT_DEF(and);
+C0_PUSH_BIN_INT_DEF(or);
+C0_PUSH_BIN_INT_DEF(xor);
+C0_PUSH_BIN_INT_DEF(eq);
+C0_PUSH_BIN_INT_DEF(neq);
+C0_PUSH_BIN_INT_DEF(lt);
+C0_PUSH_BIN_INT_DEF(gt);
+C0_PUSH_BIN_INT_DEF(lteq);
+C0_PUSH_BIN_INT_DEF(gteq);
 
-C0_PUSH_BIN_DEF(and);
-C0_PUSH_BIN_DEF(or);
-C0_PUSH_BIN_DEF(xor);
-C0_PUSH_BIN_DEF(eq);
-C0_PUSH_BIN_DEF(neq);
-C0_PUSH_BIN_DEF(lti);
-C0_PUSH_BIN_DEF(ltu);
-C0_PUSH_BIN_DEF(gti);
-C0_PUSH_BIN_DEF(gtu);
-C0_PUSH_BIN_DEF(lteqi);
-C0_PUSH_BIN_DEF(ltequ);
-C0_PUSH_BIN_DEF(gteqi);
-C0_PUSH_BIN_DEF(gtequ);
+#define C0_PUSH_BIN_FLOAT_DEF(name) C0Instr *c0_push_##name(C0Proc *p, C0Instr *left, C0Instr *right) { \
+	C0_ASSERT(c0_basic_type_is_float(left->basic_type)); \
+	return c0_push_bin(p, C0Instr_##name##_f16 + (left->basic_type - C0Basic_f16), left, right); \
+}
 
-C0_PUSH_BIN_DEF(addf);
-C0_PUSH_BIN_DEF(subf);
-C0_PUSH_BIN_DEF(mulf);
-C0_PUSH_BIN_DEF(divf);
-C0_PUSH_BIN_DEF(eqf);
-C0_PUSH_BIN_DEF(neqf);
-C0_PUSH_BIN_DEF(ltf);
-C0_PUSH_BIN_DEF(gtf);
-C0_PUSH_BIN_DEF(lteqf);
-C0_PUSH_BIN_DEF(gteqf);
+C0_PUSH_BIN_FLOAT_DEF(addf);
+C0_PUSH_BIN_FLOAT_DEF(subf);
+C0_PUSH_BIN_FLOAT_DEF(mulf);
+C0_PUSH_BIN_FLOAT_DEF(divf);
+C0_PUSH_BIN_FLOAT_DEF(eqf);
+C0_PUSH_BIN_FLOAT_DEF(neqf);
+C0_PUSH_BIN_FLOAT_DEF(ltf);
+C0_PUSH_BIN_FLOAT_DEF(gtf);
+C0_PUSH_BIN_FLOAT_DEF(lteqf);
+C0_PUSH_BIN_FLOAT_DEF(gteqf);
 
-#undef C0_PUSH_BIN_DEF
+#undef C0_PUSH_BIN_INT_DEF
+#undef C0_PUSH_BIN_FLOAT_DEF
+
 
 #define C0_PUSH_UN_INT_DEF(name) C0Instr *c0_push_##name(C0Proc *p, C0Instr *arg) { \
 	C0_ASSERT(c0_basic_type_is_integer(arg->basic_type)); \
-	C0Instr *val = c0_instr_create(p, C0Instr_##name); \
+	C0Instr *val = c0_instr_create(p, C0Instr_##name##_i8 + (arg->basic_type - C0Basic_i8)); \
 	val->basic_type = arg->basic_type; \
 	c0_alloc_args(p, val, 1); \
 	val->args[0] = c0_use(arg); \
@@ -834,7 +806,7 @@ C0_PUSH_UN_INT_DEF(abs);
 
 #define C0_PUSH_UN_FLOAT_DEF(name) C0Instr *c0_push_##name(C0Proc *p, C0Instr *arg) { \
 	C0_ASSERT(c0_basic_type_is_float(arg->basic_type)); \
-	C0Instr *val = c0_instr_create(p, C0Instr_##name); \
+	C0Instr *val = c0_instr_create(p, C0Instr_##name##_f16 + (arg->basic_type - C0Basic_f16)); \
 	val->basic_type = arg->basic_type; \
 	c0_alloc_args(p, val, 1); \
 	val->args[0] = c0_use(arg); \
@@ -983,7 +955,7 @@ C0Instr *c0_push_load_basic(C0Proc *p, C0BasicType type, C0Instr *arg) {
 	C0_ASSERT(type != C0Basic_void);
 	C0_ASSERT(arg->basic_type == C0Basic_ptr);
 
-	C0Instr *instr = c0_instr_create(p, C0Instr_load);
+	C0Instr *instr = c0_instr_create(p, C0Instr_load_i8 + (type - C0Basic_i8));
 	c0_alloc_args(p, instr, 1);
 	instr->args[0] = c0_use(arg);
 	instr->basic_type = type;
@@ -1006,7 +978,7 @@ C0Instr *c0_push_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
 	}
 	C0_ASSERT(dst->basic_type == C0Basic_ptr);
 
-	C0Instr *instr = c0_instr_create(p, C0Instr_store);
+	C0Instr *instr = c0_instr_create(p, C0Instr_store_i8 + (src->basic_type - C0Basic_i8));
 	c0_alloc_args(p, instr, 2);
 	instr->args[0] = c0_use(dst);
 	instr->args[1] = c0_use(src);
@@ -1577,10 +1549,8 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 
 	c0_print_instr_creation(instr);
 
-	i32 byte_size = 8*c0_basic_type_sizes[instr->basic_type];
-
 	switch (instr->kind) {
-	default:
+	case C0Instr_invalid:
 		c0_errorf("unhandled instruction kind");
 		break;
 
@@ -1627,7 +1597,20 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 		printf(");\n");
 		return;
 
-	case C0Instr_load:
+	case C0Instr_load_i8:
+	case C0Instr_load_u8:
+	case C0Instr_load_i16:
+	case C0Instr_load_u16:
+	case C0Instr_load_i32:
+	case C0Instr_load_u32:
+	case C0Instr_load_i64:
+	case C0Instr_load_u64:
+	case C0Instr_load_i128:
+	case C0Instr_load_u128:
+	case C0Instr_load_f16:
+	case C0Instr_load_f32:
+	case C0Instr_load_f64:
+	case C0Instr_load_ptr:
 		C0_ASSERT(instr->args_len == 1);
 		printf("(");
 		c0_print_instr_type(instr);
@@ -1636,7 +1619,20 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 		printf(";\n");
 		return;
 
-	case C0Instr_store:
+	case C0Instr_store_i8:
+	case C0Instr_store_u8:
+	case C0Instr_store_i16:
+	case C0Instr_store_u16:
+	case C0Instr_store_i32:
+	case C0Instr_store_u32:
+	case C0Instr_store_i64:
+	case C0Instr_store_u64:
+	case C0Instr_store_i128:
+	case C0Instr_store_u128:
+	case C0Instr_store_f16:
+	case C0Instr_store_f32:
+	case C0Instr_store_f64:
+	case C0Instr_store_ptr:
 		C0_ASSERT(instr->args_len == 2);
 		printf("*(");
 		c0_print_instr_type(instr->args[1]);
@@ -1652,46 +1648,9 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 		C0_ASSERT(instr->args_len == 1);
 		printf("_C0_convert_%s_to_%s", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
 		break;
-
-	case C0Instr_negf:
-
-	case C0Instr_add:
-	case C0Instr_sub:
-	case C0Instr_mul:
-	case C0Instr_quoi:
-	case C0Instr_quou:
-	case C0Instr_remi:
-	case C0Instr_remu:
-	case C0Instr_shli:
-	case C0Instr_shlu:
-	case C0Instr_shri:
-	case C0Instr_shru:
-
-	case C0Instr_and:
-	case C0Instr_or:
-	case C0Instr_xor:
-	case C0Instr_eq:
-	case C0Instr_neq:
-	case C0Instr_lti:
-	case C0Instr_ltu:
-	case C0Instr_gti:
-	case C0Instr_gtu:
-	case C0Instr_lteqi:
-	case C0Instr_ltequ:
-	case C0Instr_gteqi:
-	case C0Instr_gtequ:
-
-	case C0Instr_addf:
-	case C0Instr_subf:
-	case C0Instr_mulf:
-	case C0Instr_divf:
-	case C0Instr_eqf:
-	case C0Instr_neqf:
-	case C0Instr_ltf:
-	case C0Instr_gtf:
-	case C0Instr_lteqf:
-	case C0Instr_gteqf:
-		printf("_C0_%s%d", c0_instr_names[instr->kind], byte_size);
+	case C0Instr_reinterpret:
+		C0_ASSERT(instr->args_len == 1);
+		printf("_C0_convert_%s_to_%s", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
 		break;
 
 	case C0Instr_atomic_thread_fence:
@@ -1711,6 +1670,9 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 		printf(";\n");
 		return;
 
+	default:
+		printf("_C0_%s", c0_instr_names[instr->kind]);
+		break;
 	}
 	printf("(");
 	for (usize i = 0; i < instr->args_len; i++) {
