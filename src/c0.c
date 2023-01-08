@@ -1048,7 +1048,7 @@ C0Instr *c0_push_atomic_load_basic(C0Proc *p, C0BasicType type, C0Instr *arg) {
 	C0_ASSERT(arg->basic_type == C0Basic_ptr);
 	C0_ASSERT(arg->basic_type != C0Basic_void);
 
-	C0Instr *instr = c0_instr_create(p, C0Instr_atomic_load);
+	C0Instr *instr = c0_instr_create(p, C0Instr_atomic_load_i8 + (type - C0Basic_i8));
 	c0_alloc_args(p, instr, 1);
 	instr->args[0] = c0_use(arg);
 	instr->basic_type = type;
@@ -1059,7 +1059,7 @@ C0Instr *c0_push_atomic_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
 	C0_ASSERT(dst->basic_type == C0Basic_ptr);
 	C0_ASSERT(src->basic_type != C0Basic_void);
 
-	C0Instr *instr = c0_instr_create(p, C0Instr_atomic_store);
+	C0Instr *instr = c0_instr_create(p, C0Instr_atomic_store_i8 + (src->basic_type - C0Basic_i8));
 	c0_alloc_args(p, instr, 2);
 	instr->args[0] = c0_use(dst);
 	instr->args[1] = c0_use(src);
@@ -1072,12 +1072,12 @@ C0Instr *c0_push_atomic_cas(C0Proc *p, C0Instr *obj, C0Instr *expected, C0Instr 
 	C0_ASSERT(expected->basic_type == C0Basic_ptr);
 	C0_ASSERT(desired->basic_type != C0Basic_void);
 
-	C0Instr *instr = c0_instr_create(p, C0Instr_atomic_cas);
+	C0Instr *instr = c0_instr_create(p, C0Instr_atomic_cas_i8 + (desired->basic_type - C0Basic_i8));
 	c0_alloc_args(p, instr, 3);
 	instr->args[0] = c0_use(obj);
 	instr->args[1] = c0_use(expected);
 	instr->args[2] = c0_use(desired);
-	instr->basic_type = desired->basic_type;
+	instr->basic_type = c0_instr_ret_type[instr->kind];
 	c0_use(instr);
 	return c0_instr_push(p, instr);
 }
@@ -1090,18 +1090,17 @@ C0Instr *c0_push_atomic_bin(C0Proc *p, C0InstrKind kind, C0Instr *dst, C0Instr *
 	c0_alloc_args(p, instr, 2);
 	instr->args[0] = c0_use(dst);
 	instr->args[1] = c0_use(src);
-	instr->basic_type = src->basic_type;
-	if (kind == C0Instr_atomic_xchg) {
-		instr->basic_type = C0Basic_u8; // boolean
-	}
+	instr->basic_type = c0_instr_ret_type[instr->kind];
 	c0_use(instr);
 	return c0_instr_push(p, instr);
 }
 
 
 // TODO(bill): remove the macro
-#define C0_PUSH_ATOMIC_BIN_DEF(name) C0Instr *c0_push_atomic_##name(C0Proc *p, C0Instr *left, C0Instr *right) { \
-	return c0_push_atomic_bin(p, C0Instr_atomic_##name, left, right); \
+#define C0_PUSH_ATOMIC_BIN_DEF(name) C0Instr *c0_push_atomic_##name(C0Proc *p, C0Instr *dst, C0Instr *src) { \
+	C0_ASSERT(dst->basic_type == C0Basic_ptr); \
+	C0_ASSERT(src->basic_type != C0Basic_void); \
+	return c0_push_atomic_bin(p, C0Instr_atomic_##name##_i8 + (src->kind - C0Basic_i8), dst, src); \
 }
 
 C0_PUSH_ATOMIC_BIN_DEF(xchg);

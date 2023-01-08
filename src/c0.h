@@ -518,21 +518,112 @@ static char const *const c0_basic_names[C0Basic_COUNT] = {
 	C0_INSTR(atomic_thread_fence, void, 0), \
 	C0_INSTR(atomic_signal_fence, void, 0), \
 \
-	C0_INSTR(atomic_load,  void, 1), \
-	C0_INSTR(atomic_store, void, 2), \
-	C0_INSTR(atomic_xchg,  void, 2), \
-	C0_INSTR(atomic_cas,   void, 3), \
-	C0_INSTR(atomic_add,   void, 2), \
-	C0_INSTR(atomic_sub,   void, 2), \
-	C0_INSTR(atomic_and,   void, 2), \
-	C0_INSTR(atomic_or,    void, 2), \
-	C0_INSTR(atomic_xor,   void, 2), \
+	C0_INSTR(atomic_load_i8,    i8,   1), \
+	C0_INSTR(atomic_load_u8,    u8,   1), \
+	C0_INSTR(atomic_load_i16,   i16,  1), \
+	C0_INSTR(atomic_load_u16,   u16,  1), \
+	C0_INSTR(atomic_load_i32,   i32,  1), \
+	C0_INSTR(atomic_load_u32,   u32,  1), \
+	C0_INSTR(atomic_load_i64,   i64,  1), \
+	C0_INSTR(atomic_load_u64,   u64,  1), \
+	C0_INSTR(atomic_load_i128,  i128, 1), \
+	C0_INSTR(atomic_load_u128,  u128, 1), \
+	C0_INSTR(atomic_load_f16,   f16,  1), \
+	C0_INSTR(atomic_load_f32,   f32,  1), \
+	C0_INSTR(atomic_load_f64,   f64,  1), \
+	C0_INSTR(atomic_load_ptr,   ptr,  1), \
+	C0_INSTR(atomic_store_i8,   i8,   2), \
+	C0_INSTR(atomic_store_u8,   u8,   2), \
+	C0_INSTR(atomic_store_i16,  i16,  2), \
+	C0_INSTR(atomic_store_u16,  u16,  2), \
+	C0_INSTR(atomic_store_i32,  i32,  2), \
+	C0_INSTR(atomic_store_u32,  u32,  2), \
+	C0_INSTR(atomic_store_i64,  i64,  2), \
+	C0_INSTR(atomic_store_u64,  u64,  2), \
+	C0_INSTR(atomic_store_i128, i128, 2), \
+	C0_INSTR(atomic_store_u128, u128, 2), \
+	C0_INSTR(atomic_store_f16,  f16,  2), \
+	C0_INSTR(atomic_store_f32,  f32,  2), \
+	C0_INSTR(atomic_store_f64,  f64,  2), \
+	C0_INSTR(atomic_store_ptr,  ptr,  2), \
+\
+	C0_INSTR(atomic_xchg_i8,   u8, 2), \
+	C0_INSTR(atomic_xchg_u8,   u8, 2), \
+	C0_INSTR(atomic_xchg_i16,  u8, 2), \
+	C0_INSTR(atomic_xchg_u16,  u8, 2), \
+	C0_INSTR(atomic_xchg_i32,  u8, 2), \
+	C0_INSTR(atomic_xchg_u32,  u8, 2), \
+	C0_INSTR(atomic_xchg_i64,  u8, 2), \
+	C0_INSTR(atomic_xchg_u64,  u8, 2), \
+	C0_INSTR(atomic_xchg_i128, u8, 2), \
+	C0_INSTR(atomic_xchg_u128, u8, 2), \
+	C0_INSTR(atomic_cas_i8,   void, 3), \
+	C0_INSTR(atomic_cas_u8,   void, 3), \
+	C0_INSTR(atomic_cas_i16,  void, 3), \
+	C0_INSTR(atomic_cas_u16,  void, 3), \
+	C0_INSTR(atomic_cas_i32,  void, 3), \
+	C0_INSTR(atomic_cas_u32,  void, 3), \
+	C0_INSTR(atomic_cas_i64,  void, 3), \
+	C0_INSTR(atomic_cas_u64,  void, 3), \
+	C0_INSTR(atomic_cas_i128, void, 3), \
+	C0_INSTR(atomic_cas_u128, void, 3), \
+\
+	C0_INSTR(atomic_add_i8,   i8,   2), \
+	C0_INSTR(atomic_add_u8,   u8,   2), \
+	C0_INSTR(atomic_add_i16,  i16,  2), \
+	C0_INSTR(atomic_add_u16,  u16,  2), \
+	C0_INSTR(atomic_add_i32,  i32,  2), \
+	C0_INSTR(atomic_add_u32,  u32,  2), \
+	C0_INSTR(atomic_add_i64,  i64,  2), \
+	C0_INSTR(atomic_add_u64,  u64,  2), \
+	C0_INSTR(atomic_add_i128, i128, 2), \
+	C0_INSTR(atomic_add_u128, u128, 2), \
+	C0_INSTR(atomic_sub_i8,   i8,   2), \
+	C0_INSTR(atomic_sub_u8,   u8,   2), \
+	C0_INSTR(atomic_sub_i16,  i16,  2), \
+	C0_INSTR(atomic_sub_u16,  u16,  2), \
+	C0_INSTR(atomic_sub_i32,  i32,  2), \
+	C0_INSTR(atomic_sub_u32,  u32,  2), \
+	C0_INSTR(atomic_sub_i64,  i64,  2), \
+	C0_INSTR(atomic_sub_u64,  u64,  2), \
+	C0_INSTR(atomic_sub_i128, i128, 2), \
+	C0_INSTR(atomic_sub_u128, u128, 2), \
+	C0_INSTR(atomic_and_i8,   i8,   2), \
+	C0_INSTR(atomic_and_u8,   u8,   2), \
+	C0_INSTR(atomic_and_i16,  i16,  2), \
+	C0_INSTR(atomic_and_u16,  u16,  2), \
+	C0_INSTR(atomic_and_i32,  i32,  2), \
+	C0_INSTR(atomic_and_u32,  u32,  2), \
+	C0_INSTR(atomic_and_i64,  i64,  2), \
+	C0_INSTR(atomic_and_u64,  u64,  2), \
+	C0_INSTR(atomic_and_i128, i128, 2), \
+	C0_INSTR(atomic_and_u128, u128, 2), \
+	C0_INSTR(atomic_or_i8,   i8,   2), \
+	C0_INSTR(atomic_or_u8,   u8,   2), \
+	C0_INSTR(atomic_or_i16,  i16,  2), \
+	C0_INSTR(atomic_or_u16,  u16,  2), \
+	C0_INSTR(atomic_or_i32,  i32,  2), \
+	C0_INSTR(atomic_or_u32,  u32,  2), \
+	C0_INSTR(atomic_or_i64,  i64,  2), \
+	C0_INSTR(atomic_or_u64,  u64,  2), \
+	C0_INSTR(atomic_or_i128, i128, 2), \
+	C0_INSTR(atomic_or_u128, u128, 2), \
+	C0_INSTR(atomic_xor_i8,   i8,   2), \
+	C0_INSTR(atomic_xor_u8,   u8,   2), \
+	C0_INSTR(atomic_xor_i16,  i16,  2), \
+	C0_INSTR(atomic_xor_u16,  u16,  2), \
+	C0_INSTR(atomic_xor_i32,  i32,  2), \
+	C0_INSTR(atomic_xor_u32,  u32,  2), \
+	C0_INSTR(atomic_xor_i64,  i64,  2), \
+	C0_INSTR(atomic_xor_u64,  u64,  2), \
+	C0_INSTR(atomic_xor_i128, i128, 2), \
+	C0_INSTR(atomic_xor_u128, u128, 2), \
 \
 	C0_INSTR(memmove, void, 3), \
 	C0_INSTR(memset,  void, 3), \
 \
 	C0_INSTR(decl, void, 0), \
-	C0_INSTR(addr, void, 1), \
+	C0_INSTR(addr, ptr, 1), \
 \
 	C0_INSTR(call,  void, -1), \
 \
