@@ -1703,6 +1703,25 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 	printf(";\n");
 }
 void c0_assign_reg_id(C0Instr *instr, u32 *reg_id_) {
+	i32 arg_count = c0_instr_arg_count[instr->kind];
+	if (arg_count >= 0) {
+		// validate instruction args_len
+		C0_ASSERT(instr->args_len == arg_count);
+	} else {
+		switch (instr->kind) {
+		case C0Instr_return:
+			C0_ASSERT(instr->args_len == 0 || instr->args_len == 1);
+			break;
+		case C0Instr_if:
+			C0_ASSERT(instr->args_len == 1 || instr->args_len == 2);
+			break;
+		case C0Instr_call:
+			C0_ASSERT(instr->agg_type);
+			C0_ASSERT(instr->agg_type->kind == C0AggType_proc);
+			C0_ASSERT(instr->args_len == c0array_len(instr->agg_type->proc.types));
+			break;
+		}
+	}
 	if (instr->basic_type != C0Basic_void || instr->agg_type != NULL) {
 		instr->id = (*reg_id_)++;
 	}
