@@ -310,6 +310,8 @@ static void c0_virtual_memory_dealloc(C0MemoryBlock *block_to_free) {
 #endif
 
 
+static char *c0_type_to_cdecl(C0AggType *type, char const *str);
+
 static void c0_warning(char const *msg) {
 	fputs("WARNING: ", stderr);
 	fputs(msg, stderr);
@@ -814,13 +816,43 @@ C0_PUSH_BIN_DEF(gteqf);
 
 #undef C0_PUSH_BIN_DEF
 
-C0Instr *c0_push_negf(C0Proc *p, C0Instr *arg) {
-	C0Instr *val = c0_instr_create(p, C0Instr_negf);
-	c0_alloc_args(p, val, 1);
-	val->args[0] = c0_use(arg);
-	return c0_instr_push(p, val);
+#define C0_PUSH_UN_INT_DEF(name) C0Instr *c0_push_##name(C0Proc *p, C0Instr *arg) { \
+	C0_ASSERT(c0_basic_type_is_integer(arg->basic_type)); \
+	C0Instr *val = c0_instr_create(p, C0Instr_##name); \
+	val->basic_type = arg->basic_type; \
+	c0_alloc_args(p, val, 1); \
+	val->args[0] = c0_use(arg); \
+	return c0_instr_push(p, val); \
 }
 
+C0_PUSH_UN_INT_DEF(clz);
+C0_PUSH_UN_INT_DEF(ctz);
+C0_PUSH_UN_INT_DEF(popcnt);
+C0_PUSH_UN_INT_DEF(abs);
+
+#undef C0_PUSH_UN_INT_DEF
+
+#define C0_PUSH_UN_FLOAT_DEF(name) C0Instr *c0_push_##name(C0Proc *p, C0Instr *arg) { \
+	C0_ASSERT(c0_basic_type_is_float(arg->basic_type)); \
+	C0Instr *val = c0_instr_create(p, C0Instr_##name); \
+	val->basic_type = arg->basic_type; \
+	c0_alloc_args(p, val, 1); \
+	val->args[0] = c0_use(arg); \
+	return c0_instr_push(p, val); \
+}
+
+C0_PUSH_UN_FLOAT_DEF(absf);
+C0_PUSH_UN_FLOAT_DEF(negf);
+C0_PUSH_UN_FLOAT_DEF(ceilf);
+C0_PUSH_UN_FLOAT_DEF(floorf);
+C0_PUSH_UN_FLOAT_DEF(nearestf);
+C0_PUSH_UN_FLOAT_DEF(truncf);
+C0_PUSH_UN_FLOAT_DEF(sqrtf);
+
+#undef C0_PUSH_UN_FLOAT_DEF
+
+
+// pseudo-instruction
 C0Instr *c0_push_noti(C0Proc *p, C0Instr *arg) {
 	C0Instr *zero = NULL;
 	switch (arg->basic_type) {
@@ -843,6 +875,7 @@ C0Instr *c0_push_noti(C0Proc *p, C0Instr *arg) {
 	return c0_push_xor(p, arg, zero);
 }
 
+// pseudo-instruction
 C0Instr *c0_push_notb(C0Proc *p, C0Instr *arg) {
 	C0Instr *zero = NULL;
 	switch (arg->basic_type) {
@@ -864,6 +897,30 @@ C0Instr *c0_push_notb(C0Proc *p, C0Instr *arg) {
 	}
 	return c0_push_eq(p, arg, zero);
 }
+
+// pseudo-instruction
+C0Instr *c0_push_to_bool(C0Proc *p, C0Instr *arg) {
+	C0Instr *zero = NULL;
+	switch (arg->basic_type) {
+	case C0Basic_i8:  zero = c0_push_basic_i8(p, 0);
+	case C0Basic_u8:  zero = c0_push_basic_u8(p, 0);
+	case C0Basic_i16: zero = c0_push_basic_i16(p, 0);
+	case C0Basic_u16: zero = c0_push_basic_u16(p, 0);
+	case C0Basic_i32: zero = c0_push_basic_i32(p, 0);
+	case C0Basic_u32: zero = c0_push_basic_u32(p, 0);
+	case C0Basic_i64: zero = c0_push_basic_i64(p, 0);
+	case C0Basic_u64: zero = c0_push_basic_u64(p, 0);
+	case C0Basic_i128:
+	case C0Basic_u128:
+		c0_errorf("todo 128 bit integers");
+		break;
+	default:
+		c0_errorf("invalid type to noti");
+		break;
+	}
+	return c0_push_neq(p, arg, zero);
+}
+
 
 C0Instr *c0_push_unreachable(C0Proc *p) {
 	C0Instr *ret = c0_instr_create(p, C0Instr_unreachable);
@@ -900,11 +957,26 @@ C0Instr *c0_push_convert(C0Proc *p, C0BasicType type, C0Instr *arg) {
 	if (arg->basic_type == type) {
 		return arg;
 	}
-	C0Instr *cvt = c0_instr_create(p, C0Instr_cvt);
+	C0Instr *cvt = c0_instr_create(p, C0Instr_convert);
 	c0_alloc_args(p, cvt, 1);
 	cvt->args[0] = c0_use(arg);
 	cvt->basic_type = type;
 	return c0_instr_push(p, cvt);
+}
+C0Instr *c0_push_reinterpret_basic(C0Proc *p, C0BasicType type, C0Instr *arg) {
+	C0_ASSERT(type != C0Basic_void);
+	C0_ASSERT(arg->basic_type != C0Basic_void);
+	if (arg->basic_type == type) {
+		return arg;
+	}
+	if (c0_basic_type_sizes[type] != c0_basic_type_sizes[arg->basic_type]) {
+		c0_errorf("reinterpret requires both types to be of the same size, %s -> %s", c0_basic_names[arg->basic_type], c0_basic_names[type]);
+	}
+	C0Instr *rip = c0_instr_create(p, C0Instr_reinterpret);
+	c0_alloc_args(p, rip, 1);
+	rip->args[0] = c0_use(arg);
+	rip->basic_type = type;
+	return c0_instr_push(p, rip);
 }
 
 C0Instr *c0_push_load_basic(C0Proc *p, C0BasicType type, C0Instr *arg) {
@@ -1576,9 +1648,9 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 		return;
 
 
-	case C0Instr_cvt:
+	case C0Instr_convert:
 		C0_ASSERT(instr->args_len == 1);
-		printf("_C0_cvt_%s_to_%s", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
+		printf("_C0_convert_%s_to_%s", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
 		break;
 
 	case C0Instr_negf:

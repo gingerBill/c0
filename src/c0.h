@@ -166,240 +166,155 @@ typedef struct C0Proc    C0Proc;
 typedef struct C0AggType C0AggType;
 typedef struct C0Loc     C0Loc;
 
+#define C0_BASIC_TABLE \
+	C0_BASIC(void, "void",     0),  \
+	C0_BASIC(i8,   "i8",       1),  \
+	C0_BASIC(u8,   "u8",       1),  \
+	C0_BASIC(i16,  "i16",      2),  \
+	C0_BASIC(u16,  "u16",      2),  \
+	C0_BASIC(i32,  "i32",      4),  \
+	C0_BASIC(u32,  "u32",      4),  \
+	C0_BASIC(i64,  "i64",      8),  \
+	C0_BASIC(u64,  "u64",      8),  \
+	C0_BASIC(i128, "i128",     16), \
+	C0_BASIC(u128, "u128",     16), \
+	C0_BASIC(f16,  "f16",      2),  \
+	C0_BASIC(f32,  "f32",      4),  \
+	C0_BASIC(f64,  "f64",      8),  \
+	C0_BASIC(ptr,  "void *",  -1), /*-1 denotes that the size is `-(-1) * pointer_size`*/ \
+
 typedef u8 C0BasicType;
 enum C0BasicType_enum {
-	C0Basic_void,
-	C0Basic_i8,
-	C0Basic_u8,
-	C0Basic_i16,
-	C0Basic_u16,
-	C0Basic_i32,
-	C0Basic_u32,
-	C0Basic_i64,
-	C0Basic_u64,
-	C0Basic_i128,
-	C0Basic_u128,
-	C0Basic_f16,
-	C0Basic_f32,
-	C0Basic_f64,
-	C0Basic_ptr,
-
+#define C0_BASIC(name, str, size) C0Basic_##name
+	C0_BASIC_TABLE
+#undef C0_BASIC
 	C0Basic_COUNT
 };
 
 static i32 const c0_basic_type_sizes[C0Basic_COUNT] = {
-	0  /* void */,
-	1  /* i8   */,
-	1  /* u8   */,
-	2  /* i16  */,
-	2  /* u16  */,
-	4  /* i32  */,
-	4  /* u32  */,
-	8  /* i64  */,
-	8  /* u64  */,
-	16 /* i128 */,
-	16 /* u128 */,
-	2  /* f16  */,
-	4  /* f32  */,
-	8  /* f64  */,
-	-1 /* ptr  */, // -1 denotes that the size is `-(-1) * pointer_size`
+#define C0_BASIC(name, str, size) size
+	C0_BASIC_TABLE
+#undef C0_BASIC
 };
 
 static char const *const c0_basic_names[C0Basic_COUNT] = {
-	"void",
-	"i8",
-	"u8",
-	"i16",
-	"u16",
-	"i32",
-	"u32",
-	"i64",
-	"u64",
-	"i128",
-	"u128",
-	"f16",
-	"f32",
-	"f64",
-	"void *",
+#define C0_BASIC(name, str, size) str
+	C0_BASIC_TABLE
+#undef C0_BASIC
 };
+
+
+#define C0_INSTR_TABLE \
+	C0_INSTR(invalid, "invalid"), \
+\
+	C0_INSTR(load, "load"), \
+	C0_INSTR(store, "store"), \
+\
+	C0_INSTR(clz,      "clz"), \
+	C0_INSTR(ctz,      "ctz"), \
+	C0_INSTR(popcnt,   "popcnt"), \
+	C0_INSTR(abs,      "abs"), \
+\
+	C0_INSTR(absf,     "absf"), \
+	C0_INSTR(negf,     "negf"), \
+	C0_INSTR(ceilf,    "ceilf"), \
+	C0_INSTR(floorf,   "floorf"), \
+	C0_INSTR(nearestf, "nearestf"), \
+	C0_INSTR(truncf,   "truncf"), \
+	C0_INSTR(sqrtf,    "sqrtf"), \
+\
+	C0_INSTR(add,  "add"), \
+	C0_INSTR(sub,  "sub"), \
+	C0_INSTR(mul,  "mul"), \
+	C0_INSTR(quoi, "quoi"), \
+	C0_INSTR(quou, "quou"), \
+	C0_INSTR(remi, "remi"), \
+	C0_INSTR(remu, "remu"), \
+	C0_INSTR(shli, "shli"), \
+	C0_INSTR(shlu, "shlu"), \
+	C0_INSTR(shri, "shri"), \
+	C0_INSTR(shru, "shru"), \
+\
+	C0_INSTR(and,   "and"), \
+	C0_INSTR(or,    "or"), \
+	C0_INSTR(xor,   "xor"), \
+	C0_INSTR(eq,    "eq"), \
+	C0_INSTR(neq,   "neq"), \
+	C0_INSTR(lti,   "lti"), \
+	C0_INSTR(ltu,   "ltu"), \
+	C0_INSTR(gti,   "gti"), \
+	C0_INSTR(gtu,   "gtu"), \
+	C0_INSTR(lteqi, "lteqi"), \
+	C0_INSTR(ltequ, "ltequ"), \
+	C0_INSTR(gteqi, "gteqi"), \
+	C0_INSTR(gtequ, "gtequ"), \
+	C0_INSTR(mini,  "mini"), \
+	C0_INSTR(minu,  "minu"), \
+	C0_INSTR(maxi,  "maxi"), \
+	C0_INSTR(maxu,  "maxu"), \
+\
+	C0_INSTR(addf,  "addf"), \
+	C0_INSTR(subf,  "subf"), \
+	C0_INSTR(mulf,  "mulf"), \
+	C0_INSTR(divf,  "divf"), \
+	C0_INSTR(eqf,   "eqf"), \
+	C0_INSTR(neqf,  "neqf"), \
+	C0_INSTR(ltf,   "ltf"), \
+	C0_INSTR(gtf,   "gtf"), \
+	C0_INSTR(lteqf, "lteqf"), \
+	C0_INSTR(gteqf, "gteqf"), \
+\
+	C0_INSTR(convert,     "convert"), \
+	C0_INSTR(reinterpret, "reinterpret"), \
+\
+	C0_INSTR(atomic_thread_fence, "atomic_thread_fence"), \
+	C0_INSTR(atomic_signal_fence, "atomic_signal_fence"), \
+\
+	C0_INSTR(atomic_load,  "atomic_load"), \
+	C0_INSTR(atomic_store, "atomic_store"), \
+	C0_INSTR(atomic_xchg,  "atomic_xchg"), \
+	C0_INSTR(atomic_cas,   "atomic_cas"), \
+	C0_INSTR(atomic_add,   "atomic_add"), \
+	C0_INSTR(atomic_sub,   "atomic_sub"), \
+	C0_INSTR(atomic_and,   "atomic_and"), \
+	C0_INSTR(atomic_or,    "atomic_or"), \
+	C0_INSTR(atomic_xor,   "atomic_xor"), \
+\
+	C0_INSTR(memmove, "memmove"), \
+	C0_INSTR(memset,  "memset"), \
+\
+	C0_INSTR(decl, "decl"), \
+	C0_INSTR(addr, "addr"), \
+\
+	C0_INSTR(call, "call"), \
+\
+	C0_INSTR(select, "select"), \
+\
+	C0_INSTR(if,    "if"), \
+	C0_INSTR(loop,  "loop"), \
+	C0_INSTR(block, "block"), \
+\
+	C0_INSTR(continue,    "continue"), \
+	C0_INSTR(break,       "break"), \
+	C0_INSTR(return,      "return"), \
+	C0_INSTR(unreachable, "unreachable"), \
+	C0_INSTR(goto,        "goto"), \
+	C0_INSTR(label,       "label"), \
+
 
 
 typedef u16 C0InstrKind;
 enum C0InstrKind_enum {
-	C0Instr_invalid,
-
-	// ptr
-	C0Instr_load,
-	C0Instr_store,
-
-	// unary
-	C0Instr_negf,
-
-	// binary
-	C0Instr_add,
-	C0Instr_sub,
-	C0Instr_mul,
-	C0Instr_quoi,
-	C0Instr_quou,
-	C0Instr_remi,
-	C0Instr_remu,
-	C0Instr_shli,
-	C0Instr_shlu,
-	C0Instr_shri,
-	C0Instr_shru,
-
-	C0Instr_and,
-	C0Instr_or,
-	C0Instr_xor,
-	C0Instr_eq,
-	C0Instr_neq,
-	C0Instr_lti,
-	C0Instr_ltu,
-	C0Instr_gti,
-	C0Instr_gtu,
-	C0Instr_lteqi,
-	C0Instr_ltequ,
-	C0Instr_gteqi,
-	C0Instr_gtequ,
-
-	C0Instr_addf,
-	C0Instr_subf,
-	C0Instr_mulf,
-	C0Instr_divf,
-	C0Instr_eqf,
-	C0Instr_neqf,
-	C0Instr_ltf,
-	C0Instr_gtf,
-	C0Instr_lteqf,
-	C0Instr_gteqf,
-
-	// conversion
-	C0Instr_cvt,
-
-	// atomic
-	C0Instr_atomic_thread_fence,
-	C0Instr_atomic_signal_fence,
-
-	C0Instr_atomic_load,
-	C0Instr_atomic_store,
-	C0Instr_atomic_xchg,
-	C0Instr_atomic_cas,
-	C0Instr_atomic_add,
-	C0Instr_atomic_sub,
-	C0Instr_atomic_and,
-	C0Instr_atomic_or,
-	C0Instr_atomic_xor,
-
-	// memory
-	C0Instr_memmove,
-	C0Instr_memset,
-
-	// declarations
-	C0Instr_decl,
-	C0Instr_addr,
-
-	// call
-	C0Instr_call,
-
-	// ternary
-	C0Instr_select,
-
-	// blocks
-	C0Instr_if,
-	C0Instr_loop,
-	C0Instr_block,
-
-	// branch
-	C0Instr_continue,
-	C0Instr_break,
-	C0Instr_return,
-	C0Instr_unreachable,
-	C0Instr_goto,
-	C0Instr_label,
-
+#define C0_INSTR(name, str) C0Instr_##name
+	C0_INSTR_TABLE
+#undef C0_INSTR
 	C0Instr_COUNT
 };
 
 static char const *const c0_instr_names[C0Instr_COUNT] = {
-	"invalid",
-
-	"load",
-	"store",
-
-	"negf",
-
-	"add",
-	"sub",
-	"mul",
-	"quoi",
-	"quou",
-	"remi",
-	"remu",
-	"shli",
-	"shlu",
-	"shri",
-	"shru",
-
-	"and",
-	"or",
-	"xor",
-	"eq",
-	"neq",
-	"lti",
-	"ltu",
-	"gti",
-	"gtu",
-	"lteqi",
-	"ltequ",
-	"gteqi",
-	"gtequ",
-
-	"addf",
-	"subf",
-	"mulf",
-	"divf",
-	"eqf",
-	"neqf",
-	"ltf",
-	"gtf",
-	"lteqf",
-	"gteqf",
-
-	"cvt",
-
-	"atomic_thread_fence",
-	"atomic_signal_fence",
-
-	"atomic_load",
-	"atomic_store",
-	"atomic_xchg",
-	"atomic_cas",
-	"atomic_add",
-	"atomic_sub",
-	"atomic_and",
-	"atomic_or",
-	"atomic_xor",
-
-	"memmove",
-	"memset",
-
-	"decl",
-	"addr",
-
-	"call",
-
-	"select",
-
-	"if",
-	"loop",
-	"block",
-
-	"continue",
-	"break",
-	"return",
-	"unreachable",
-	"goto",
-	"label",
+#define C0_INSTR(name, str) str
+	C0_INSTR_TABLE
+#undef C0_INSTR
 };
 
 struct C0Gen {
