@@ -639,7 +639,20 @@ static char const *const c0_basic_names[C0Basic_COUNT] = {
 \
 	C0_INSTR(call,  void, -1), \
 \
-	C0_INSTR(select, void, 3), \
+	C0_INSTR(select_i8,   i8,   3), \
+	C0_INSTR(select_u8,   u8,   3), \
+	C0_INSTR(select_i16,  i16,  3), \
+	C0_INSTR(select_u16,  u16,  3), \
+	C0_INSTR(select_i32,  i32,  3), \
+	C0_INSTR(select_u32,  u32,  3), \
+	C0_INSTR(select_i64,  i64,  3), \
+	C0_INSTR(select_u64,  u64,  3), \
+	C0_INSTR(select_i128, i128, 3), \
+	C0_INSTR(select_u128, u128, 3), \
+	C0_INSTR(select_f16,  f16,  3), \
+	C0_INSTR(select_f32,  f32,  3), \
+	C0_INSTR(select_f64,  f64,  3), \
+	C0_INSTR(select_ptr,  ptr,  3), \
 \
 	C0_INSTR(if,    void, -1), \
 	C0_INSTR(loop,  void, 0), \

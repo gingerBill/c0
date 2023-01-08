@@ -533,6 +533,7 @@ C0Proc *c0_proc_create(C0Gen *gen, C0String name) {
 C0Instr *c0_instr_create(C0Proc *p, C0InstrKind kind) {
 	C0Instr *instr = c0_arena_new(p->arena, C0Instr);
 	instr->kind = kind;
+	instr->basic_type = c0_instr_ret_type[kind];
 	return instr;
 }
 C0Instr *c0_instr_last(C0Proc *p) {
@@ -739,7 +740,6 @@ C0Instr *c0_push_bin(C0Proc *p, C0InstrKind kind, C0Instr *left, C0Instr *right)
 	C0_ASSERT(left->basic_type == right->basic_type);
 
 	C0Instr *bin = c0_instr_create(p, kind);
-	bin->basic_type = c0_instr_ret_type[kind];
 	c0_alloc_args(p, bin, 2);
 	bin->args[0] = c0_use(left);
 	bin->args[1] = c0_use(right);
@@ -791,7 +791,6 @@ C0_PUSH_BIN_FLOAT_DEF(gteqf);
 #define C0_PUSH_UN_INT_DEF(name) C0Instr *c0_push_##name(C0Proc *p, C0Instr *arg) { \
 	C0_ASSERT(c0_basic_type_is_integer(arg->basic_type)); \
 	C0Instr *val = c0_instr_create(p, C0Instr_##name##_i8 + (arg->basic_type - C0Basic_i8)); \
-	val->basic_type = arg->basic_type; \
 	c0_alloc_args(p, val, 1); \
 	val->args[0] = c0_use(arg); \
 	return c0_instr_push(p, val); \
@@ -807,7 +806,6 @@ C0_PUSH_UN_INT_DEF(abs);
 #define C0_PUSH_UN_FLOAT_DEF(name) C0Instr *c0_push_##name(C0Proc *p, C0Instr *arg) { \
 	C0_ASSERT(c0_basic_type_is_float(arg->basic_type)); \
 	C0Instr *val = c0_instr_create(p, C0Instr_##name##_f16 + (arg->basic_type - C0Basic_f16)); \
-	val->basic_type = arg->basic_type; \
 	c0_alloc_args(p, val, 1); \
 	val->args[0] = c0_use(arg); \
 	return c0_instr_push(p, val); \
@@ -958,7 +956,6 @@ C0Instr *c0_push_load_basic(C0Proc *p, C0BasicType type, C0Instr *arg) {
 	C0Instr *instr = c0_instr_create(p, C0Instr_load_i8 + (type - C0Basic_i8));
 	c0_alloc_args(p, instr, 1);
 	instr->args[0] = c0_use(arg);
-	instr->basic_type = type;
 	return c0_instr_push(p, instr);
 }
 
@@ -968,7 +965,6 @@ C0Instr *c0_push_addr_of_decl(C0Proc *p, C0Instr *decl) {
 	C0Instr *instr = c0_instr_create(p, C0Instr_addr);
 	c0_alloc_args(p, instr, 1);
 	instr->args[0] = c0_use(decl);
-	instr->basic_type = C0Basic_ptr;
 	return c0_instr_push(p, instr);
 }
 
@@ -1008,7 +1004,7 @@ C0Instr *c0_push_unaligned_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
 	}
 	src = c0_push_addr_of_decl(p, src);
 
-	C0Instr *len = c0_push_basic_i32(p, (i32)size);
+	C0Instr *len = c0_push_basic_u32(p, (i32)size);
 	return c0_push_memmove(p, dst, src, len);
 }
 C0Instr *c0_push_volatile_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
@@ -1024,7 +1020,7 @@ C0Instr *c0_push_unaligned_load_basic(C0Proc *p, C0BasicType type, C0Instr *ptr)
 	C0Instr *val = c0_push_decl_basic(p, type, {0});
 	C0Instr *val_ptr = c0_push_addr_of_decl(p, val);
 	i64 size = c0_basic_type_size(p->gen, type);
-	C0Instr *len = c0_push_basic_i32(p, (i32)size);
+	C0Instr *len = c0_push_basic_u32(p, (i32)size);
 	c0_push_memmove(p, val_ptr, ptr, len);
 	return val;
 }
@@ -1051,7 +1047,6 @@ C0Instr *c0_push_atomic_load_basic(C0Proc *p, C0BasicType type, C0Instr *arg) {
 	C0Instr *instr = c0_instr_create(p, C0Instr_atomic_load_i8 + (type - C0Basic_i8));
 	c0_alloc_args(p, instr, 1);
 	instr->args[0] = c0_use(arg);
-	instr->basic_type = type;
 	return c0_instr_push(p, instr);
 }
 
@@ -1077,7 +1072,6 @@ C0Instr *c0_push_atomic_cas(C0Proc *p, C0Instr *obj, C0Instr *expected, C0Instr 
 	instr->args[0] = c0_use(obj);
 	instr->args[1] = c0_use(expected);
 	instr->args[2] = c0_use(desired);
-	instr->basic_type = c0_instr_ret_type[instr->kind];
 	c0_use(instr);
 	return c0_instr_push(p, instr);
 }
@@ -1090,7 +1084,6 @@ C0Instr *c0_push_atomic_bin(C0Proc *p, C0InstrKind kind, C0Instr *dst, C0Instr *
 	c0_alloc_args(p, instr, 2);
 	instr->args[0] = c0_use(dst);
 	instr->args[1] = c0_use(src);
-	instr->basic_type = c0_instr_ret_type[instr->kind];
 	c0_use(instr);
 	return c0_instr_push(p, instr);
 }
@@ -1176,12 +1169,11 @@ C0Instr *c0_push_select_basic(C0Proc *p, C0Instr *cond, C0Instr *true_case, C0In
 	C0_ASSERT(true_case->basic_type == false_case->basic_type);
 	C0_ASSERT(true_case->basic_type != C0Basic_void);
 
-	C0Instr *instr = c0_instr_create(p, C0Instr_select);
+	C0Instr *instr = c0_instr_create(p, C0Instr_select_i8 + (true_case->basic_type - C0Basic_i8));
 	c0_alloc_args(p, instr, 3);
 	instr->args[0] = c0_use(cond);
 	instr->args[1] = c0_use(true_case);
 	instr->args[2] = c0_use(false_case);
-	instr->basic_type = true_case->basic_type;
 	return c0_instr_push(p, instr);
 }
 
@@ -1671,7 +1663,20 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 		printf("%s", c0_instr_names[instr->kind]);
 		break;
 
-	case C0Instr_select:
+	case C0Instr_select_i8:
+	case C0Instr_select_u8:
+	case C0Instr_select_i16:
+	case C0Instr_select_u16:
+	case C0Instr_select_i32:
+	case C0Instr_select_u32:
+	case C0Instr_select_i64:
+	case C0Instr_select_u64:
+	case C0Instr_select_i128:
+	case C0Instr_select_u128:
+	case C0Instr_select_f16:
+	case C0Instr_select_f32:
+	case C0Instr_select_f64:
+	case C0Instr_select_ptr:
 		C0_ASSERT(instr->args_len == 3);
 		c0_print_instr_arg(instr->args[0]);
 		printf(" ? ");
