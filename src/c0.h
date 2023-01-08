@@ -205,114 +205,114 @@ static char const *const c0_basic_names[C0Basic_COUNT] = {
 
 
 #define C0_INSTR_TABLE \
-	C0_INSTR(invalid, "invalid"), \
+	C0_INSTR(invalid), \
 \
-	C0_INSTR(load, "load"), \
-	C0_INSTR(store, "store"), \
+	C0_INSTR(load), \
+	C0_INSTR(store), \
 \
-	C0_INSTR(clz,      "clz"), \
-	C0_INSTR(ctz,      "ctz"), \
-	C0_INSTR(popcnt,   "popcnt"), \
-	C0_INSTR(abs,      "abs"), \
+	C0_INSTR(clz), \
+	C0_INSTR(ctz), \
+	C0_INSTR(popcnt), \
+	C0_INSTR(abs), \
 \
-	C0_INSTR(absf,     "absf"), \
-	C0_INSTR(negf,     "negf"), \
-	C0_INSTR(ceilf,    "ceilf"), \
-	C0_INSTR(floorf,   "floorf"), \
-	C0_INSTR(nearestf, "nearestf"), \
-	C0_INSTR(truncf,   "truncf"), \
-	C0_INSTR(sqrtf,    "sqrtf"), \
+	C0_INSTR(absf), \
+	C0_INSTR(negf), \
+	C0_INSTR(ceilf), \
+	C0_INSTR(floorf), \
+	C0_INSTR(nearestf), \
+	C0_INSTR(truncf), \
+	C0_INSTR(sqrtf), \
 \
-	C0_INSTR(add,  "add"), \
-	C0_INSTR(sub,  "sub"), \
-	C0_INSTR(mul,  "mul"), \
-	C0_INSTR(quoi, "quoi"), \
-	C0_INSTR(quou, "quou"), \
-	C0_INSTR(remi, "remi"), \
-	C0_INSTR(remu, "remu"), \
-	C0_INSTR(shli, "shli"), \
-	C0_INSTR(shlu, "shlu"), \
-	C0_INSTR(shri, "shri"), \
-	C0_INSTR(shru, "shru"), \
+	C0_INSTR(add), \
+	C0_INSTR(sub), \
+	C0_INSTR(mul), \
+	C0_INSTR(quoi), \
+	C0_INSTR(quou), \
+	C0_INSTR(remi), \
+	C0_INSTR(remu), \
+	C0_INSTR(shli), \
+	C0_INSTR(shlu), \
+	C0_INSTR(shri), \
+	C0_INSTR(shru), \
 \
-	C0_INSTR(and,   "and"), \
-	C0_INSTR(or,    "or"), \
-	C0_INSTR(xor,   "xor"), \
-	C0_INSTR(eq,    "eq"), \
-	C0_INSTR(neq,   "neq"), \
-	C0_INSTR(lti,   "lti"), \
-	C0_INSTR(ltu,   "ltu"), \
-	C0_INSTR(gti,   "gti"), \
-	C0_INSTR(gtu,   "gtu"), \
-	C0_INSTR(lteqi, "lteqi"), \
-	C0_INSTR(ltequ, "ltequ"), \
-	C0_INSTR(gteqi, "gteqi"), \
-	C0_INSTR(gtequ, "gtequ"), \
-	C0_INSTR(mini,  "mini"), \
-	C0_INSTR(minu,  "minu"), \
-	C0_INSTR(maxi,  "maxi"), \
-	C0_INSTR(maxu,  "maxu"), \
+	C0_INSTR(and), \
+	C0_INSTR(or), \
+	C0_INSTR(xor), \
+	C0_INSTR(eq), \
+	C0_INSTR(neq), \
+	C0_INSTR(lti), \
+	C0_INSTR(ltu), \
+	C0_INSTR(gti), \
+	C0_INSTR(gtu), \
+	C0_INSTR(lteqi), \
+	C0_INSTR(ltequ), \
+	C0_INSTR(gteqi), \
+	C0_INSTR(gtequ), \
+	C0_INSTR(mini), \
+	C0_INSTR(minu), \
+	C0_INSTR(maxi), \
+	C0_INSTR(maxu), \
 \
-	C0_INSTR(addf,  "addf"), \
-	C0_INSTR(subf,  "subf"), \
-	C0_INSTR(mulf,  "mulf"), \
-	C0_INSTR(divf,  "divf"), \
-	C0_INSTR(eqf,   "eqf"), \
-	C0_INSTR(neqf,  "neqf"), \
-	C0_INSTR(ltf,   "ltf"), \
-	C0_INSTR(gtf,   "gtf"), \
-	C0_INSTR(lteqf, "lteqf"), \
-	C0_INSTR(gteqf, "gteqf"), \
+	C0_INSTR(addf), \
+	C0_INSTR(subf), \
+	C0_INSTR(mulf), \
+	C0_INSTR(divf), \
+	C0_INSTR(eqf), \
+	C0_INSTR(neqf), \
+	C0_INSTR(ltf), \
+	C0_INSTR(gtf), \
+	C0_INSTR(lteqf), \
+	C0_INSTR(gteqf), \
 \
-	C0_INSTR(convert,     "convert"), \
-	C0_INSTR(reinterpret, "reinterpret"), \
+	C0_INSTR(convert), \
+	C0_INSTR(reinterpret), \
 \
-	C0_INSTR(atomic_thread_fence, "atomic_thread_fence"), \
-	C0_INSTR(atomic_signal_fence, "atomic_signal_fence"), \
+	C0_INSTR(atomic_thread_fence), \
+	C0_INSTR(atomic_signal_fence), \
 \
-	C0_INSTR(atomic_load,  "atomic_load"), \
-	C0_INSTR(atomic_store, "atomic_store"), \
-	C0_INSTR(atomic_xchg,  "atomic_xchg"), \
-	C0_INSTR(atomic_cas,   "atomic_cas"), \
-	C0_INSTR(atomic_add,   "atomic_add"), \
-	C0_INSTR(atomic_sub,   "atomic_sub"), \
-	C0_INSTR(atomic_and,   "atomic_and"), \
-	C0_INSTR(atomic_or,    "atomic_or"), \
-	C0_INSTR(atomic_xor,   "atomic_xor"), \
+	C0_INSTR(atomic_load), \
+	C0_INSTR(atomic_store), \
+	C0_INSTR(atomic_xchg), \
+	C0_INSTR(atomic_cas), \
+	C0_INSTR(atomic_add), \
+	C0_INSTR(atomic_sub), \
+	C0_INSTR(atomic_and), \
+	C0_INSTR(atomic_or), \
+	C0_INSTR(atomic_xor), \
 \
-	C0_INSTR(memmove, "memmove"), \
-	C0_INSTR(memset,  "memset"), \
+	C0_INSTR(memmove), \
+	C0_INSTR(memset), \
 \
-	C0_INSTR(decl, "decl"), \
-	C0_INSTR(addr, "addr"), \
+	C0_INSTR(decl), \
+	C0_INSTR(addr), \
 \
-	C0_INSTR(call, "call"), \
+	C0_INSTR(call), \
 \
-	C0_INSTR(select, "select"), \
+	C0_INSTR(select), \
 \
-	C0_INSTR(if,    "if"), \
-	C0_INSTR(loop,  "loop"), \
-	C0_INSTR(block, "block"), \
+	C0_INSTR(if), \
+	C0_INSTR(loop), \
+	C0_INSTR(block), \
 \
-	C0_INSTR(continue,    "continue"), \
-	C0_INSTR(break,       "break"), \
-	C0_INSTR(return,      "return"), \
-	C0_INSTR(unreachable, "unreachable"), \
-	C0_INSTR(goto,        "goto"), \
-	C0_INSTR(label,       "label"), \
+	C0_INSTR(continue), \
+	C0_INSTR(break), \
+	C0_INSTR(return), \
+	C0_INSTR(unreachable), \
+	C0_INSTR(goto), \
+	C0_INSTR(label), \
 
 
 
 typedef u16 C0InstrKind;
 enum C0InstrKind_enum {
-#define C0_INSTR(name, str) C0Instr_##name
+#define C0_INSTR(name) C0Instr_##name
 	C0_INSTR_TABLE
 #undef C0_INSTR
 	C0Instr_COUNT
 };
 
 static char const *const c0_instr_names[C0Instr_COUNT] = {
-#define C0_INSTR(name, str) str
+#define C0_INSTR(name) #name
 	C0_INSTR_TABLE
 #undef C0_INSTR
 };
