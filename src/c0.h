@@ -557,16 +557,22 @@ static char const *const c0_basic_names[C0Basic_COUNT] = {
 	C0_INSTR(atomic_xchg_u64,  u8, 2), \
 	C0_INSTR(atomic_xchg_i128, u8, 2), \
 	C0_INSTR(atomic_xchg_u128, u8, 2), \
-	C0_INSTR(atomic_cas_i8,   void, 3), \
-	C0_INSTR(atomic_cas_u8,   void, 3), \
-	C0_INSTR(atomic_cas_i16,  void, 3), \
-	C0_INSTR(atomic_cas_u16,  void, 3), \
-	C0_INSTR(atomic_cas_i32,  void, 3), \
-	C0_INSTR(atomic_cas_u32,  void, 3), \
-	C0_INSTR(atomic_cas_i64,  void, 3), \
-	C0_INSTR(atomic_cas_u64,  void, 3), \
-	C0_INSTR(atomic_cas_i128, void, 3), \
-	C0_INSTR(atomic_cas_u128, void, 3), \
+	C0_INSTR(atomic_xchg_f16,  u8, 2), \
+	C0_INSTR(atomic_xchg_f32,  u8, 2), \
+	C0_INSTR(atomic_xchg_f64,  u8, 2), \
+	C0_INSTR(atomic_cas_i8,    void, 3), \
+	C0_INSTR(atomic_cas_u8,    void, 3), \
+	C0_INSTR(atomic_cas_i16,   void, 3), \
+	C0_INSTR(atomic_cas_u16,   void, 3), \
+	C0_INSTR(atomic_cas_i32,   void, 3), \
+	C0_INSTR(atomic_cas_u32,   void, 3), \
+	C0_INSTR(atomic_cas_i64,   void, 3), \
+	C0_INSTR(atomic_cas_u64,   void, 3), \
+	C0_INSTR(atomic_cas_i128,  void, 3), \
+	C0_INSTR(atomic_cas_u128,  void, 3), \
+	C0_INSTR(atomic_cas_f16,   void, 3), \
+	C0_INSTR(atomic_cas_f32,   void, 3), \
+	C0_INSTR(atomic_cas_f64,   void, 3), \
 \
 	C0_INSTR(atomic_add_i8,   i8,   2), \
 	C0_INSTR(atomic_add_u8,   u8,   2), \
@@ -578,6 +584,9 @@ static char const *const c0_basic_names[C0Basic_COUNT] = {
 	C0_INSTR(atomic_add_u64,  u64,  2), \
 	C0_INSTR(atomic_add_i128, i128, 2), \
 	C0_INSTR(atomic_add_u128, u128, 2), \
+	C0_INSTR(atomic_addf_f16,  f16, 2), \
+	C0_INSTR(atomic_addf_f32,  f32, 2), \
+	C0_INSTR(atomic_addf_f64,  f64, 2), \
 	C0_INSTR(atomic_sub_i8,   i8,   2), \
 	C0_INSTR(atomic_sub_u8,   u8,   2), \
 	C0_INSTR(atomic_sub_i16,  i16,  2), \
@@ -588,6 +597,9 @@ static char const *const c0_basic_names[C0Basic_COUNT] = {
 	C0_INSTR(atomic_sub_u64,  u64,  2), \
 	C0_INSTR(atomic_sub_i128, i128, 2), \
 	C0_INSTR(atomic_sub_u128, u128, 2), \
+	C0_INSTR(atomic_subf_f16,  f16, 2), \
+	C0_INSTR(atomic_subf_f32,  f32, 2), \
+	C0_INSTR(atomic_subf_f64,  f64, 2), \
 	C0_INSTR(atomic_and_i8,   i8,   2), \
 	C0_INSTR(atomic_and_u8,   u8,   2), \
 	C0_INSTR(atomic_and_i16,  i16,  2), \

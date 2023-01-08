@@ -1097,19 +1097,31 @@ C0Instr *c0_push_atomic_bin(C0Proc *p, C0InstrKind kind, C0Instr *dst, C0Instr *
 
 
 // TODO(bill): remove the macro
-#define C0_PUSH_ATOMIC_BIN_DEF(name) C0Instr *c0_push_atomic_##name(C0Proc *p, C0Instr *dst, C0Instr *src) { \
+#define C0_PUSH_ATOMIC_BIN_INT_DEF(name) C0Instr *c0_push_atomic_##name(C0Proc *p, C0Instr *dst, C0Instr *src) { \
 	C0_ASSERT(dst->basic_type == C0Basic_ptr); \
 	C0_ASSERT(src->basic_type != C0Basic_void); \
+	C0_ASSERT(c0_basic_type_is_integer(src->basic_type)); \
 	return c0_push_atomic_bin(p, C0Instr_atomic_##name##_i8 + (src->kind - C0Basic_i8), dst, src); \
 }
 
-C0_PUSH_ATOMIC_BIN_DEF(xchg);
-C0_PUSH_ATOMIC_BIN_DEF(add);
-C0_PUSH_ATOMIC_BIN_DEF(sub);
-C0_PUSH_ATOMIC_BIN_DEF(and);
-C0_PUSH_ATOMIC_BIN_DEF(or);
-C0_PUSH_ATOMIC_BIN_DEF(xor);
+#define C0_PUSH_ATOMIC_BIN_FLOAT_DEF(name) C0Instr *c0_push_atomic_##name(C0Proc *p, C0Instr *dst, C0Instr *src) { \
+	C0_ASSERT(dst->basic_type == C0Basic_ptr); \
+	C0_ASSERT(src->basic_type != C0Basic_void); \
+	C0_ASSERT(c0_basic_type_is_float(src->basic_type)); \
+	return c0_push_atomic_bin(p, C0Instr_atomic_##name##_f16 + (src->kind - C0Basic_f16), dst, src); \
+}
 
+C0_PUSH_ATOMIC_BIN_INT_DEF(xchg);
+C0_PUSH_ATOMIC_BIN_INT_DEF(add);
+C0_PUSH_ATOMIC_BIN_FLOAT_DEF(addf);
+C0_PUSH_ATOMIC_BIN_INT_DEF(sub);
+C0_PUSH_ATOMIC_BIN_FLOAT_DEF(subf);
+C0_PUSH_ATOMIC_BIN_INT_DEF(and);
+C0_PUSH_ATOMIC_BIN_INT_DEF(or);
+C0_PUSH_ATOMIC_BIN_INT_DEF(xor);
+
+#undef C0_PUSH_ATOMIC_BIN_INT_DEF
+#undef C0_PUSH_ATOMIC_BIN_FLOAT_DEF
 
 C0Instr *c0_push_memmove(C0Proc *p, C0Instr *dst, C0Instr *src, C0Instr *size) {
 	C0_ASSERT(dst->basic_type == C0Basic_ptr);
