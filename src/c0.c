@@ -1356,7 +1356,7 @@ void c0_print_instr_arg(C0Instr *instr) {
 	if (instr->name.len != 0) {
 		printf("%.*s", C0PSTR(instr->name));
 	} else {
-		printf("r%u", instr->id);
+		printf("_C0_%u", instr->id);
 	}
 }
 
@@ -1449,25 +1449,33 @@ static char *c0_type_to_cdecl_internal(C0AggType *type, char const *str, bool ig
 	C0_PANIC("invalid type");
 	return NULL;
 }
-void c0_print_instr_creation(C0Instr *instr) {
+static void c0_print_instr_creation_register_prefix(C0Instr *instr) {
+	if (instr->kind != C0Instr_decl) {
+		// printf("register "); // this just prevents these values from being addressable
+	}
+}
+static void c0_print_instr_creation(C0Instr *instr) {
 	if (instr->agg_type) {
 		switch (instr->agg_type->kind) {
 		case C0AggType_basic:
 			if (instr->agg_type->basic.type != C0Basic_void) {
+				c0_print_instr_creation_register_prefix(instr);
 				printf("%s ", c0_basic_names[instr->basic_type]);
 				c0_print_instr_arg(instr);
 				printf(" = ");
 			}
 			return;
 		}
+		c0_print_instr_creation_register_prefix(instr);
 		char const *name = NULL;
 		if (instr->name.len != 0) {
 			name = c0_string_to_cstr(instr->name);
 		} else {
-			name = strf("r%u", instr->id);
+			name = strf("_C0_%u", instr->id);
 		}
 		printf("%s = ", c0_type_to_cdecl(instr->agg_type, name));
 	} else if (instr->basic_type != C0Basic_void) {
+		c0_print_instr_creation_register_prefix(instr);
 		printf("%s", c0_basic_names[instr->basic_type]);
 		if (instr->basic_type != C0Basic_ptr) {
 			printf(" ");
@@ -1649,12 +1657,16 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 
 	case C0Instr_convert:
 		C0_ASSERT(instr->args_len == 1);
-		printf("_C0_convert_%s_to_%s", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
-		break;
+		printf("(%s)(", c0_basic_names[instr->basic_type]);
+		c0_print_instr_arg(instr->args[0]);
+		printf("); /*convert*/\n");
+		return;
 	case C0Instr_reinterpret:
 		C0_ASSERT(instr->args_len == 1);
-		printf("_C0_convert_%s_to_%s", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
-		break;
+		printf("(union {%s from; %s to;}){", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
+		c0_print_instr_arg(instr->args[0]);
+		printf("}.to; /*reinterpret*/\n");
+		return;
 
 	case C0Instr_atomic_thread_fence:
 	case C0Instr_atomic_signal_fence:

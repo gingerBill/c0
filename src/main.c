@@ -26,6 +26,13 @@ int main(int argc, char const **argv) {
 	c0_use(decl1);
 	c0_push_store_basic(p, decl0, c0_push_basic_i32(p, 1));
 
+	{
+		C0Instr *a = c0_push_basic_i32(p, 1);
+		C0Instr *b = c0_push_reinterpret_basic(p, C0Basic_f32, a);
+		C0Instr *c = c0_push_reinterpret_basic(p, C0Basic_i32, b);
+		c0_use(c);
+	}
+
 	C0Instr *x = c0_push_convert(p, C0Basic_i32, decl0);
 	C0Instr *w = c0_push_add(p, x, c0_push_basic_i32(p, 2));
 	w = c0_push_mul(p, w, c0_push_basic_i32(p, 3));
