@@ -526,6 +526,7 @@ C0Proc *c0_proc_create(C0Gen *gen, C0String name) {
 	C0Arena *arena = &gen->arena;
 	C0Proc *p = c0_arena_new(arena, C0Proc);
 	C0_ASSERT(p);
+	p->gen = gen;
 	p->arena = arena;
 	p->name  = c0_arena_str_dup(p->arena, name);
 	return p;
@@ -756,8 +757,10 @@ C0_PUSH_BIN_INT_DEF(sub);
 C0_PUSH_BIN_INT_DEF(mul);
 C0_PUSH_BIN_INT_DEF(quo);
 C0_PUSH_BIN_INT_DEF(rem);
-C0_PUSH_BIN_INT_DEF(shl);
-C0_PUSH_BIN_INT_DEF(shr);
+C0_PUSH_BIN_INT_DEF(shlc); // masked C-like
+C0_PUSH_BIN_INT_DEF(shrc); // masked C-like
+C0_PUSH_BIN_INT_DEF(shlo); // Odin-like
+C0_PUSH_BIN_INT_DEF(shro); // Odin-like
 C0_PUSH_BIN_INT_DEF(and);
 C0_PUSH_BIN_INT_DEF(or);
 C0_PUSH_BIN_INT_DEF(xor);
@@ -1449,24 +1452,18 @@ static char *c0_type_to_cdecl_internal(C0AggType *type, char const *str, bool ig
 	C0_PANIC("invalid type");
 	return NULL;
 }
-static void c0_print_instr_creation_register_prefix(C0Instr *instr) {
-	if (instr->kind != C0Instr_decl) {
-		// printf("register "); // this just prevents these values from being addressable
-	}
-}
+
 static void c0_print_instr_creation(C0Instr *instr) {
 	if (instr->agg_type) {
 		switch (instr->agg_type->kind) {
 		case C0AggType_basic:
 			if (instr->agg_type->basic.type != C0Basic_void) {
-				c0_print_instr_creation_register_prefix(instr);
 				printf("%s ", c0_basic_names[instr->basic_type]);
 				c0_print_instr_arg(instr);
 				printf(" = ");
 			}
 			return;
 		}
-		c0_print_instr_creation_register_prefix(instr);
 		char const *name = NULL;
 		if (instr->name.len != 0) {
 			name = c0_string_to_cstr(instr->name);
@@ -1475,7 +1472,6 @@ static void c0_print_instr_creation(C0Instr *instr) {
 		}
 		printf("%s = ", c0_type_to_cdecl(instr->agg_type, name));
 	} else if (instr->basic_type != C0Basic_void) {
-		c0_print_instr_creation_register_prefix(instr);
 		printf("%s", c0_basic_names[instr->basic_type]);
 		if (instr->basic_type != C0Basic_ptr) {
 			printf(" ");
@@ -1513,7 +1509,7 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 		printf(";\n");
 		return;
 	case C0Instr_unreachable:
-		printf("C0_unreachable();\n");
+		printf("_C0_unreachable();\n");
 		return;
 	case C0Instr_goto:
 		C0_ASSERT(instr->args_len == 1);
@@ -1657,15 +1653,15 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 
 	case C0Instr_convert:
 		C0_ASSERT(instr->args_len == 1);
-		printf("(%s)(", c0_basic_names[instr->basic_type]);
+		printf("_C0_convert_%s_to_%s(", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
 		c0_print_instr_arg(instr->args[0]);
-		printf("); /*convert*/\n");
+		printf(");\n");
 		return;
 	case C0Instr_reinterpret:
 		C0_ASSERT(instr->args_len == 1);
-		printf("(union {%s from; %s to;}){", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
+		printf("_C0_reinterpret_%s_to_%s(", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
 		c0_print_instr_arg(instr->args[0]);
-		printf("}.to; /*reinterpret*/\n");
+		printf(");\n");
 		return;
 
 	case C0Instr_atomic_thread_fence:
@@ -1771,7 +1767,33 @@ void c0_remove_unused(C0Array(C0Instr *) *array) {
 }
 
 
+void c0_register_instr_to_gen(C0Gen *gen, C0Instr *instr) {
+	if (!instr) {
+		return;
+	}
+
+	gen->instrs_to_generate[instr->kind] = true;
+	switch (instr->kind) {
+	case C0Instr_convert:
+		gen->convert_to_generate[instr->args[0]->basic_type][instr->basic_type] = true;
+		break;
+	case C0Instr_reinterpret:
+		gen->reinterpret_to_generate[instr->args[0]->basic_type][instr->basic_type] = true;
+		break;
+	}
+	if (instr->nested_instrs) {
+		for (usize i = 0; i < c0array_len(instr->nested_instrs); i++) {
+			c0_register_instr_to_gen(gen, instr->nested_instrs[i]);
+		}
+	}
+	if (instr->kind == C0Instr_if && instr->args_len == 2) {
+		c0_register_instr_to_gen(gen, instr->args[1]);
+	}
+}
+
+
 void c0_proc_finish(C0Proc *p) {
+	C0_ASSERT(p->gen);
 	C0_ASSERT(c0array_len(p->nested_blocks) == 0);
 
 	c0_remove_unused(&p->instrs);
@@ -1788,9 +1810,250 @@ void c0_proc_finish(C0Proc *p) {
 	u32 reg_id = 0;
 
 	for (usize i = 0; i < c0array_len(p->instrs); i++) {
-		c0_assign_reg_id(p->instrs[i], &reg_id);
+		C0Instr *instr = p->instrs[i];
+		c0_assign_reg_id(instr, &reg_id);
+		c0_register_instr_to_gen(p->gen, instr);
 	}
 }
+
+void c0_gen_instructions_print(C0Gen *gen) {
+	printf("#if !defined(__STDC_VERSION__) || (__STDC_VERSION__ < 201112L)\n");
+	printf("#error C0 requires a C11 compiler\n");
+	printf("#endif\n\n");
+	printf("#define C0_GENERATED 1\n\n");
+
+	printf("#if defined(_MSC_VER)\n");
+	printf("#define C0_FORCE_INLINE __forceinline\n");
+	printf("#else\n");
+	printf("#define C0_FORCE_INLINE __attribute__((always_inline)) inline\n");
+	printf("#endif\n\n");
+
+	printf("typedef signed   char      i8;\n");
+	printf("typedef unsigned char      u8;\n");
+	printf("typedef signed   short     i16;\n");
+	printf("typedef unsigned short     u16;\n");
+	printf("typedef signed   int       i32;\n");
+	printf("typedef unsigned int       u32;\n");
+	printf("typedef signed   long long i64;\n");
+	printf("typedef unsigned long long u64;\n");
+	printf("typedef unsigned short     f16;\n");
+	printf("typedef float              f32;\n");
+	printf("typedef double             f64;\n");
+
+	printf("\n");
+
+	if (gen->instrs_to_generate[C0Instr_memmove] || gen->instrs_to_generate[C0Instr_memset]) {
+		printf("#include <string.h>\n");
+	}
+
+	if (gen->instrs_to_generate[C0Instr_unreachable]) {
+		char const *name = c0_instr_names[C0Instr_unreachable];
+		printf("static C0_FORCE_INLINE _Noreturn void _C0_%s(void) {\n", name);
+		printf("#if defined(_MSC_VER)\n");
+		printf("\t__assume(false);\n");
+		printf("#else\n");
+		printf("\t__builtin_unreachable();\n");
+		printf("#endif\n\n");
+		printf("}\n\n");
+	}
+
+	static char const *masks[16] = {};
+	masks[1] = "0xff";
+	masks[2] = "0xffff";
+	masks[4] = "0xffffffff";
+	masks[8] = "0xffffffffffffffff";
+
+	static char const *shift_masks[16] = {};
+	shift_masks[1] = "0x7";
+	shift_masks[2] = "0xf";
+	shift_masks[4] = "0x1f";
+	shift_masks[8] = "0x3f";
+
+
+	for (C0InstrKind kind = 1; kind < C0Instr_memmove; kind++) {
+		if (gen->instrs_to_generate[kind]) {
+			C0BasicType type = c0_instr_ret_type[kind];
+			char const *ts   = c0_basic_names[type];
+			char const *uts  = c0_basic_names[c0_basic_unsigned_type[type]];
+			i32 bytes        = c0_basic_type_sizes[type];
+			i32 bits         = 8*bytes;
+			char const *name = c0_instr_names[kind];
+			if (bytes == 16) {
+				c0_errorf("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
+			}
+
+			switch (kind) {
+			case C0Instr_convert:
+			case C0Instr_reinterpret:
+				continue;
+			}
+
+			if (C0Instr_clz_i8 <= kind && kind <= C0Instr_popcnt_u128) {
+				c0_errorf("TODO: generate %s", c0_instr_names[kind]);
+			} else if (C0Instr_abs_i8 <= kind && kind <= C0Instr_abs_u128) {
+
+			} else if (C0Instr_add_i8 <= kind && kind <= C0Instr_add_u128) {
+				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				printf("\t%s x = (%s)a + (%s)b;\n", uts, uts, uts);
+				char const *mask = masks[bytes];
+				if (mask) {
+					printf("\treturn (%s)(x & %s);\n", ts, mask);
+				} else {
+					printf("\treturn (%s)(x);\n", ts);
+				}
+
+				if (mask) {}
+				printf("}\n\n");
+			} else if (C0Instr_sub_i8 <= kind && kind <= C0Instr_sub_u128) {
+				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				printf("\t%s x = (%s)a - (%s)b;\n", uts, uts, uts);
+				char const *mask = masks[bytes];
+				if (mask) {
+					printf("\treturn (%s)(x & %s);\n", ts, mask);
+				} else {
+					printf("\treturn (%s)(x);\n", ts);
+				}
+
+				if (mask) {}
+				printf("}\n\n");
+			} else if (C0Instr_mul_i8 <= kind && kind <= C0Instr_mul_u128) {
+				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				printf("\t%s x = (%s)a * (%s)b;\n", uts, uts, uts);
+				char const *mask = masks[bytes];
+				if (mask) {
+					printf("\treturn (%s)(x & %s);\n", ts, mask);
+				} else {
+					printf("\treturn (%s)(x);\n", ts);
+				}
+
+				if (mask) {}
+				printf("}\n\n");
+			} else if (C0Instr_quo_i8 <= kind && kind <= C0Instr_quo_u128) {
+				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				if (c0_basic_is_signed[type]) {
+					printf("\ni64 x = (i64)a / (i64)b;\n");
+				} else {
+					printf("\nu64 x = (u64)a / (u64)b;\n");
+				}
+				char const *mask = masks[bytes];
+				if (mask) {
+					printf("\treturn (%s)(x & %s);\n", ts, mask);
+				} else {
+					printf("\treturn (%s)(x);\n", ts);
+				}
+
+				if (mask) {}
+				printf("}\n\n");
+			} else if (C0Instr_rem_i8 <= kind && kind <= C0Instr_rem_u128) {
+				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				if (c0_basic_is_signed[type]) {
+					printf("\ni64 x = (i64)a %% (i64)b;\n");
+				} else {
+					printf("\nu64 x = (u64)a %% (u64)b;\n");
+				}
+				char const *mask = masks[bytes];
+				if (mask) {
+					printf("\treturn (%s)(x & %s);\n", ts, mask);
+				} else {
+					printf("\treturn (%s)(x);\n", ts);
+				}
+
+				if (mask) {}
+				printf("}\n\n");
+			} else if (C0Instr_shlc_i8 <= kind && kind <= C0Instr_shlc_u128) {
+				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				if (c0_basic_is_signed[type]) {
+					printf("\ni64 x = (i64)a << (i64)((u32)b & %s);\n", shift_masks[bytes]);
+				} else {
+					printf("\nu64 x = (u64)a << ((u64)b & %s);\n", shift_masks[bytes]);
+				}
+				char const *mask = masks[bytes];
+				if (mask) {
+					printf("\treturn (%s)(x & %s);\n", ts, mask);
+				} else {
+					printf("\treturn (%s)(x);\n", ts);
+				}
+
+				if (mask) {}
+				printf("}\n\n");
+			} else if (C0Instr_shlo_i8 <= kind && kind <= C0Instr_shlo_u128) {
+				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				printf("\ni64 x = b < %d ? ((i64)a << (i64)((u32)b & %s)) : 0;\n", bits, shift_masks[bytes]);
+				char const *mask = masks[bytes];
+				if (mask) {
+					printf("\treturn (%s)(x & %s);\n", ts, mask);
+				} else {
+					printf("\treturn (%s)(x);\n", ts);
+				}
+
+				if (mask) {}
+				printf("}\n\n");
+			} else if (C0Instr_shrc_i8 <= kind && kind <= C0Instr_shrc_u128) {
+				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				if (c0_basic_is_signed[type]) {
+					printf("\ni64 x = (i64)a >> (i64)((u64)b & %s);\n", shift_masks[bytes]);
+				} else {
+					printf("\nu64 x = (u64)a >> ((u64)b & %s);\n", shift_masks[bytes]);
+				}
+				char const *mask = masks[bytes];
+				if (mask) {
+					printf("\treturn (%s)(x & %s);\n", ts, mask);
+				} else {
+					printf("\treturn (%s)(x);\n", ts);
+				}
+
+				if (mask) {}
+				printf("}\n\n");
+			} else if (C0Instr_shro_i8 <= kind && kind <= C0Instr_shro_u128) {
+				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				printf("\ni64 x = b < %d ? ((i64)a >> (i64)((u32)b & %s)) : 0;\n", bits, shift_masks[bytes]);
+				char const *mask = masks[bytes];
+				if (mask) {
+					printf("\treturn (%s)(x & %s);\n", ts, mask);
+				} else {
+					printf("\treturn (%s)(x);\n", ts);
+				}
+
+				if (mask) {}
+				printf("}\n\n");
+			} else {
+				c0_errorf("TODO: generate %s", c0_instr_names[kind]);
+			}
+		}
+	}
+
+	for (C0BasicType from = C0Basic_i8; from < C0Basic_COUNT; from++) {
+		for (C0BasicType to = C0Basic_i8; to < C0Basic_COUNT; to++) {
+			if (from == to) {
+				continue;
+			}
+			// TODO(bill): edge cases for i128, u128, and f16
+			if (gen->convert_to_generate[from][to]) {
+				char const *name = c0_instr_names[C0Instr_convert];
+				char const *from_s = c0_basic_names[from];
+				char const *to_s   = c0_basic_names[to];
+				printf("static C0_FORCE_INLINE %s _C0_%s_%s_to_%s(%s a) {\n", to_s, name, from_s, to_s, from_s);
+				if (c0_basic_type_sizes[from] > c0_basic_type_sizes[to]) {
+					printf("\treturn (%s)(a & %s);\n", to_s, masks[c0_basic_type_sizes[to]]);
+				} else {
+					printf("\treturn (%s)a;\n", to_s);
+				}
+				printf("}\n\n");
+			} else if (gen->reinterpret_to_generate[from][to]) {
+				char const *name = c0_instr_names[C0Instr_reinterpret];
+				char const *from_s = c0_basic_names[from];
+				char const *to_s   = c0_basic_names[to];
+				printf("static C0_FORCE_INLINE %s _C0_%s_%s_to_%s(%s a) {\n", to_s, name, from_s, to_s, from_s);
+				printf("\tunion {%s from; %s to} x;\n", from_s, to_s);
+				printf("\tx.from = a;\n");
+				printf("\treturn x.to;\n");
+				printf("}\n\n");
+			}
+		}
+	}
+
+}
+
 void c0_print_sig(C0AggType *sig, C0String name, bool ptr) {
 	// TODO(bill): this is mega wrong
 	C0_ASSERT(sig->kind == C0AggType_proc);

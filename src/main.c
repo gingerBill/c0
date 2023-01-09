@@ -65,6 +65,9 @@ int main(int argc, char const **argv) {
 
 	c0_proc_finish(p);
 
+
+	c0_gen_instructions_print(&gen);
+
 	c0_print_proc(p);
 
 	printf("[DONE]\n");

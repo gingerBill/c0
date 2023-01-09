@@ -167,40 +167,63 @@ typedef struct C0AggType C0AggType;
 typedef struct C0Loc     C0Loc;
 
 #define C0_BASIC_TABLE \
-	C0_BASIC(void, "void",     0),  \
-	C0_BASIC(i8,   "i8",       1),  \
-	C0_BASIC(u8,   "u8",       1),  \
-	C0_BASIC(i16,  "i16",      2),  \
-	C0_BASIC(u16,  "u16",      2),  \
-	C0_BASIC(i32,  "i32",      4),  \
-	C0_BASIC(u32,  "u32",      4),  \
-	C0_BASIC(i64,  "i64",      8),  \
-	C0_BASIC(u64,  "u64",      8),  \
-	C0_BASIC(i128, "i128",     16), \
-	C0_BASIC(u128, "u128",     16), \
-	C0_BASIC(f16,  "f16",      2),  \
-	C0_BASIC(f32,  "f32",      4),  \
-	C0_BASIC(f64,  "f64",      8),  \
-	C0_BASIC(ptr,  "void *",  -1), /*-1 denotes that the size is `-(-1) * pointer_size`*/ \
+	C0_BASIC(void, "void",     0,  false), \
+	C0_BASIC(i8,   "i8",       1,  true),  \
+	C0_BASIC(u8,   "u8",       1,  false), \
+	C0_BASIC(i16,  "i16",      2,  true),  \
+	C0_BASIC(u16,  "u16",      2,  false), \
+	C0_BASIC(i32,  "i32",      4,  true),  \
+	C0_BASIC(u32,  "u32",      4,  false), \
+	C0_BASIC(i64,  "i64",      8,  true),  \
+	C0_BASIC(u64,  "u64",      8,  false), \
+	C0_BASIC(i128, "i128",     16, true),  \
+	C0_BASIC(u128, "u128",     16, false), \
+	C0_BASIC(f16,  "f16",      2,  true),  \
+	C0_BASIC(f32,  "f32",      4,  true),  \
+	C0_BASIC(f64,  "f64",      8,  true),  \
+	C0_BASIC(ptr,  "void *",  -1, false), /*-1 denotes that the size is `-(-1) * pointer_size`*/ \
 
 typedef u8 C0BasicType;
 enum C0BasicType_enum {
-#define C0_BASIC(name, str, size) C0Basic_##name
+#define C0_BASIC(name, str, size, is_signed) C0Basic_##name
 	C0_BASIC_TABLE
 #undef C0_BASIC
 	C0Basic_COUNT
 };
 
 static i32 const c0_basic_type_sizes[C0Basic_COUNT] = {
-#define C0_BASIC(name, str, size) size
+#define C0_BASIC(name, str, size, is_signed) size
 	C0_BASIC_TABLE
 #undef C0_BASIC
 };
 
 static char const *const c0_basic_names[C0Basic_COUNT] = {
-#define C0_BASIC(name, str, size) str
+#define C0_BASIC(name, str, size, is_signed) str
 	C0_BASIC_TABLE
 #undef C0_BASIC
+};
+static bool const c0_basic_is_signed[C0Basic_COUNT] = {
+#define C0_BASIC(name, str, size, is_signed) is_signed
+	C0_BASIC_TABLE
+#undef C0_BASIC
+};
+
+static C0BasicType c0_basic_unsigned_type[C0Basic_COUNT] = {
+	C0Basic_void,
+	C0Basic_u8,
+	C0Basic_u8,
+	C0Basic_u16,
+	C0Basic_u16,
+	C0Basic_u32,
+	C0Basic_u32,
+	C0Basic_u64,
+	C0Basic_u64,
+	C0Basic_u128,
+	C0Basic_u128,
+	C0Basic_f16,
+	C0Basic_f32,
+	C0Basic_f64,
+	C0Basic_ptr,
 };
 
 
@@ -349,26 +372,48 @@ static char const *const c0_basic_names[C0Basic_COUNT] = {
 	C0_INSTR(rem_u64,  u64,  2), \
 	C0_INSTR(rem_i128, i128, 2), \
 	C0_INSTR(rem_u128, u128, 2), \
-	C0_INSTR(shl_i8,   i8,   2), \
-	C0_INSTR(shl_u8,   u8,   2), \
-	C0_INSTR(shl_i16,  i16,  2), \
-	C0_INSTR(shl_u16,  u16,  2), \
-	C0_INSTR(shl_i32,  i32,  2), \
-	C0_INSTR(shl_u32,  u32,  2), \
-	C0_INSTR(shl_i64,  i64,  2), \
-	C0_INSTR(shl_u64,  u64,  2), \
-	C0_INSTR(shl_i128, i128, 2), \
-	C0_INSTR(shl_u128, u128, 2), \
-	C0_INSTR(shr_i8,   i8,   2), \
-	C0_INSTR(shr_u8,   u8,   2), \
-	C0_INSTR(shr_i16,  i16,  2), \
-	C0_INSTR(shr_u16,  u16,  2), \
-	C0_INSTR(shr_i32,  i32,  2), \
-	C0_INSTR(shr_u32,  u32,  2), \
-	C0_INSTR(shr_i64,  i64,  2), \
-	C0_INSTR(shr_u64,  u64,  2), \
-	C0_INSTR(shr_i128, i128, 2), \
-	C0_INSTR(shr_u128, u128, 2), \
+	/* C-like shifts */ \
+	C0_INSTR(shlc_i8,   i8,   2), \
+	C0_INSTR(shlc_u8,   u8,   2), \
+	C0_INSTR(shlc_i16,  i16,  2), \
+	C0_INSTR(shlc_u16,  u16,  2), \
+	C0_INSTR(shlc_i32,  i32,  2), \
+	C0_INSTR(shlc_u32,  u32,  2), \
+	C0_INSTR(shlc_i64,  i64,  2), \
+	C0_INSTR(shlc_u64,  u64,  2), \
+	C0_INSTR(shlc_i128, i128, 2), \
+	C0_INSTR(shlc_u128, u128, 2), \
+	C0_INSTR(shrc_i8,   i8,   2), \
+	C0_INSTR(shrc_u8,   u8,   2), \
+	C0_INSTR(shrc_i16,  i16,  2), \
+	C0_INSTR(shrc_u16,  u16,  2), \
+	C0_INSTR(shrc_i32,  i32,  2), \
+	C0_INSTR(shrc_u32,  u32,  2), \
+	C0_INSTR(shrc_i64,  i64,  2), \
+	C0_INSTR(shrc_u64,  u64,  2), \
+	C0_INSTR(shrc_i128, i128, 2), \
+	C0_INSTR(shrc_u128, u128, 2), \
+	/* Odin-like shifts */ \
+	C0_INSTR(shlo_i8,   i8,   2), \
+	C0_INSTR(shlo_u8,   u8,   2), \
+	C0_INSTR(shlo_i16,  i16,  2), \
+	C0_INSTR(shlo_u16,  u16,  2), \
+	C0_INSTR(shlo_i32,  i32,  2), \
+	C0_INSTR(shlo_u32,  u32,  2), \
+	C0_INSTR(shlo_i64,  i64,  2), \
+	C0_INSTR(shlo_u64,  u64,  2), \
+	C0_INSTR(shlo_i128, i128, 2), \
+	C0_INSTR(shlo_u128, u128, 2), \
+	C0_INSTR(shro_i8,   i8,   2), \
+	C0_INSTR(shro_u8,   u8,   2), \
+	C0_INSTR(shro_i16,  i16,  2), \
+	C0_INSTR(shro_u16,  u16,  2), \
+	C0_INSTR(shro_i32,  i32,  2), \
+	C0_INSTR(shro_u32,  u32,  2), \
+	C0_INSTR(shro_i64,  i64,  2), \
+	C0_INSTR(shro_u64,  u64,  2), \
+	C0_INSTR(shro_i128, i128, 2), \
+	C0_INSTR(shro_u128, u128, 2), \
 \
 	C0_INSTR(and_i8,   i8,   2), \
 	C0_INSTR(and_u8,   u8,   2), \
@@ -631,14 +676,6 @@ static char const *const c0_basic_names[C0Basic_COUNT] = {
 	C0_INSTR(atomic_xor_i128, i128, 2), \
 	C0_INSTR(atomic_xor_u128, u128, 2), \
 \
-	C0_INSTR(memmove, void, 3), \
-	C0_INSTR(memset,  void, 3), \
-\
-	C0_INSTR(decl, void, 0), \
-	C0_INSTR(addr, ptr, 1), \
-\
-	C0_INSTR(call,  void, -1), \
-\
 	C0_INSTR(select_i8,   i8,   3), \
 	C0_INSTR(select_u8,   u8,   3), \
 	C0_INSTR(select_i16,  i16,  3), \
@@ -653,6 +690,15 @@ static char const *const c0_basic_names[C0Basic_COUNT] = {
 	C0_INSTR(select_f32,  f32,  3), \
 	C0_INSTR(select_f64,  f64,  3), \
 	C0_INSTR(select_ptr,  ptr,  3), \
+\
+	C0_INSTR(memmove, void, 3), \
+	C0_INSTR(memset,  void, 3), \
+\
+	C0_INSTR(decl, void, 0), \
+	C0_INSTR(addr, ptr, 1), \
+/* TODO(bill): add instructions for array indexing and record field selection */\
+\
+	C0_INSTR(call,  void, -1), \
 \
 	C0_INSTR(if,    void, -1), \
 	C0_INSTR(loop,  void, 0), \
@@ -704,6 +750,10 @@ struct C0Gen {
 	C0Array(C0String)    files;
 	C0Array(C0AggType *) types;
 	C0Array(C0Proc *)    procs;
+
+	u8 instrs_to_generate[C0Instr_COUNT];
+	u8 convert_to_generate[C0Basic_COUNT][C0Basic_COUNT];
+	u8 reinterpret_to_generate[C0Basic_COUNT][C0Basic_COUNT];
 };
 
 struct C0Loc {
