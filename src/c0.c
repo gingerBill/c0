@@ -32,20 +32,50 @@
 	#define c0_atomic_store(ptr, x)     atomic_store((ptr), (x))
 #endif
 
+void *c0_heap_calloc(isize elem_size, isize count) {
+	C0_ASSERT(elem_size > 0);
+	if (count == 0) {
+		return NULL;
+	}
+	C0_ASSERT(count > 0);
+	void *ptr = calloc(elem_size, count);
+	C0_ASSERT(ptr);
+	return ptr;
+}
+void *c0_heap_alloc(isize size) {
+	C0_ASSERT(size >= 0);
+	return c0_heap_calloc(1, size);
+}
+void c0_heap_free(void *ptr) {
+	if (ptr) {
+		free(ptr);
+	}
+}
+void *c0_heap_resize(void *ptr, isize size) {
+	if (ptr == NULL) {
+		return c0_heap_alloc(size);
+	} else if (size == 0) {
+		c0_heap_free(ptr);
+		return NULL;
+	}
+	C0_ASSERT(size > 0);
+	return realloc(ptr, size);
+}
+
 bool c0array_grow_internal(void **const array, usize elements, usize type_size) {
 	usize count = 0;
 	void *data = 0;
 	if (*array) {
 		C0Array *const meta = c0array_meta(*array);
 		count = 2 * meta->cap + elements;
-		data = realloc(meta, type_size * count + sizeof(*meta));
+		data = c0_heap_resize(meta, type_size * count + sizeof(*meta));
 		if (!data) {
-			free(meta);
+			c0_heap_free(meta);
 			return false;
 		}
 	} else {
 		count = elements + 1;
-		data = malloc(type_size * count + sizeof(C0Array));
+		data = c0_heap_alloc(type_size * count + sizeof(C0Array));
 		if (!data) {
 			return false;
 		}
@@ -58,7 +88,7 @@ bool c0array_grow_internal(void **const array, usize elements, usize type_size) 
 }
 void c0array_delete(void *const array) {
 	if (array) {
-		free(c0array_meta(array));
+		c0_heap_free(c0array_meta(array));
 	}
 }
 
@@ -310,7 +340,7 @@ static void c0_virtual_memory_dealloc(C0MemoryBlock *block_to_free) {
 #endif
 
 
-static char *c0_type_to_cdecl(C0AggType *type, char const *str);
+static char *c0_type_to_cdecl(C0Arena *a, C0AggType *type, char const *str);
 
 static void c0_warning(char const *msg) {
 	fputs("WARNING: ", stderr);
@@ -802,7 +832,28 @@ C0_PUSH_BIN_FLOAT_DEF(gteqf);
 C0_PUSH_UN_INT_DEF(clz);
 C0_PUSH_UN_INT_DEF(ctz);
 C0_PUSH_UN_INT_DEF(popcnt);
-C0_PUSH_UN_INT_DEF(abs);
+
+// C0Instr *c0_push_abs(C0Proc *p, C0Instr *arg) {
+// 	C0_ASSERT(c0_basic_type_is_integer(arg->basic_type));
+// 	C0InstrKind kind = C0Instr_abs_i8;
+// 	switch (arg->basic_type) {
+// 	case C0Basic_u8:
+// 	case C0Basic_u16:
+// 	case C0Basic_u32:
+// 	case C0Basic_u64:
+// 	case C0Basic_u128:
+// 		return arg;
+// 	case C0Basic_i8:   kind = C0Instr_abs_i8;   break;
+// 	case C0Basic_i16:  kind = C0Instr_abs_i16;  break;
+// 	case C0Basic_i32:  kind = C0Instr_abs_i32;  break;
+// 	case C0Basic_i64:  kind = C0Instr_abs_i64;  break;
+// 	case C0Basic_i128: kind = C0Instr_abs_i128; break;
+// 	}
+// 	C0Instr *val = c0_instr_create(p, kind);
+// 	c0_alloc_args(p, val, 1);
+// 	val->args[0] = c0_use(arg);
+// 	return c0_instr_push(p, val);
+// }
 
 #undef C0_PUSH_UN_INT_DEF
 
@@ -970,6 +1021,31 @@ C0Instr *c0_push_addr_of_decl(C0Proc *p, C0Instr *decl) {
 	instr->args[0] = c0_use(decl);
 	return c0_instr_push(p, instr);
 }
+C0Instr *c0_push_index_ptr(C0Proc *p, C0AggType *array_type, C0Instr *array_ptr, C0Instr *index) {
+	C0_ASSERT(array_type && array_type->kind == C0AggType_array);
+	C0_ASSERT(array_ptr->basic_type == C0Basic_ptr);
+	C0_ASSERT(c0_basic_type_is_integer(index->basic_type));
+
+	C0Instr *instr = c0_instr_create(p, C0Instr_index_ptr);
+	instr->agg_type = array_type;
+	c0_alloc_args(p, instr, 2);
+	instr->args[0] = c0_use(array_ptr);
+	instr->args[1] = c0_use(index);
+	return c0_instr_push(p, instr);
+}
+C0Instr *c0_push_field_ptr(C0Proc *p, C0AggType *record_type, C0Instr *record_ptr, u32 field_index) {
+	C0_ASSERT(record_type && record_type->kind == C0AggType_array);
+	C0_ASSERT(record_ptr->basic_type == C0Basic_ptr);
+
+	C0_ASSERT(field_index < c0array_len(record_type->record.types));
+
+	C0Instr *instr = c0_instr_create(p, C0Instr_field_ptr);
+	instr->agg_type = record_type;
+	c0_alloc_args(p, instr, 1);
+	instr->args[0] = c0_use(record_ptr);
+	instr->value_u64 = (u64)field_index;
+	return c0_instr_push(p, instr);
+}
 
 C0Instr *c0_push_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
 	if (dst->kind == C0Instr_decl) {
@@ -978,9 +1054,12 @@ C0Instr *c0_push_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
 	C0_ASSERT(dst->basic_type == C0Basic_ptr);
 
 	C0Instr *instr = c0_instr_create(p, C0Instr_store_i8 + (src->basic_type - C0Basic_i8));
+	instr->basic_type = C0Basic_void;
+
 	c0_alloc_args(p, instr, 2);
 	instr->args[0] = c0_use(dst);
 	instr->args[1] = c0_use(src);
+	c0_use(instr);
 	return c0_instr_push(p, instr);
 }
 
@@ -1147,6 +1226,14 @@ C0Instr *c0_push_memset(C0Proc *p, C0Instr *dst, u8 val, C0Instr *size) {
 	return c0_instr_push(p, instr);
 }
 
+C0Instr *c0_push_decl_basic_with_alignment(C0Proc *p, C0BasicType type, C0String name, u32 alignment) {
+	C0_ASSERT(type != C0Basic_void);
+	C0Instr *instr = c0_instr_create(p, C0Instr_decl);
+	instr->name = name;
+	instr->basic_type = type;
+	instr->alignment = alignment;
+	return c0_instr_push(p, instr);
+}
 C0Instr *c0_push_decl_basic(C0Proc *p, C0BasicType type, C0String name) {
 	C0_ASSERT(type != C0Basic_void);
 	C0Instr *instr = c0_instr_create(p, C0Instr_decl);
@@ -1155,6 +1242,17 @@ C0Instr *c0_push_decl_basic(C0Proc *p, C0BasicType type, C0String name) {
 	return c0_instr_push(p, instr);
 }
 
+C0Instr *c0_push_decl_agg_with_alignment(C0Proc *p, C0AggType *type, C0String name, u32 alignment) {
+	C0_ASSERT(type);
+	if (type->kind == C0AggType_basic) {
+		return c0_push_decl_basic_with_alignment(p, type->basic.type, name, alignment);
+	}
+	C0Instr *instr = c0_instr_create(p, C0Instr_decl);
+	instr->name = name;
+	instr->agg_type = type;
+	instr->alignment = alignment;
+	return c0_instr_push(p, instr);
+}
 C0Instr *c0_push_decl_agg(C0Proc *p, C0AggType *type, C0String name) {
 	C0_ASSERT(type);
 	if (type->kind == C0AggType_basic) {
@@ -1168,6 +1266,9 @@ C0Instr *c0_push_decl_agg(C0Proc *p, C0AggType *type, C0String name) {
 
 C0Instr *c0_push_select_basic(C0Proc *p, C0Instr *cond, C0Instr *true_case, C0Instr *false_case) {
 	C0_ASSERT(c0_basic_type_is_integer(cond->basic_type));
+	if (c0_basic_type_sizes[cond->basic_type] == 16) {
+		cond = c0_push_to_bool(p, cond);
+	}
 
 	C0_ASSERT(true_case->basic_type == false_case->basic_type);
 	C0_ASSERT(true_case->basic_type != C0Basic_void);
@@ -1363,25 +1464,29 @@ void c0_print_instr_arg(C0Instr *instr) {
 	}
 }
 
-static char *strf(char const *fmt, ...) {
+static char *strf_alloc(C0Arena *a, usize n) {
+	return (char *)c0_arena_alloc(a, n, 1);
+}
+
+static char *strf(C0Arena *a, char const *fmt, ...) {
 	char *str = NULL;
 	va_list va;
 	va_start(va, fmt);
 	usize n = 1 + vsnprintf(NULL, 0, fmt, va);
 	va_end(va);
 	if (n) {
-		str = (char *)calloc(1, n); // TODO(bill): make this use an arena
+		str = strf_alloc(a, n);
 		va_start(va, fmt);
 		vsnprintf(str, n, fmt, va);
 		va_end(va);
 	}
 	return str;
 }
-static char const *c0_cdecl_paren(char const *str, char c) {
-	return c && c != '[' ? strf("(%s)", str) : str;
+static char const *c0_cdecl_paren(C0Arena *a, char const *str, char c) {
+	return c && c != '[' ? strf(a, "(%s)", str) : str;
 }
-static char const *c0_string_to_cstr(C0String str) {
-	char *c = (char *)calloc(1, str.len+1);
+static char const *c0_string_to_cstr(C0Arena *a, C0String str) {
+	char *c = strf_alloc(a, str.len+1);
 	memmove(c, str.text, str.len);
 	return c;
 }
@@ -1402,24 +1507,24 @@ char *str_buf_printf(C0Array(char) *array, char const *fmt, ...) {
 	return *array;
 }
 
-static char *c0_type_to_cdecl_internal(C0AggType *type, char const *str, bool ignore_proc_ptr);
-static char *c0_type_to_cdecl(C0AggType *type, char const *str) {
-	return c0_type_to_cdecl_internal(type, str, false);
+static char *c0_type_to_cdecl_internal(C0Arena *a, C0AggType *type, char const *str, bool ignore_proc_ptr);
+static char *c0_type_to_cdecl(C0Arena *a, C0AggType *type, char const *str) {
+	return c0_type_to_cdecl_internal(a, type, str, false);
 }
-static char *c0_type_to_cdecl_internal(C0AggType *type, char const *str, bool ignore_proc_ptr) {
+static char *c0_type_to_cdecl_internal(C0Arena *a, C0AggType *type, char const *str, bool ignore_proc_ptr) {
 	switch (type->kind) {
 	case C0AggType_basic:
 		if (type->basic.type == C0Basic_ptr) {
-			return strf("void%s%s", *str ? " " : "", c0_cdecl_paren(strf("*%s", str), *str));
+			return strf(a, "void %s", c0_cdecl_paren(a, strf(a, "*%s", str), *str));
 		} else {
 			char const *s = c0_basic_names[type->basic.type];
-			return strf("%s%s%s", s, *str ? " " : "", str);
+			return strf(a, "%s%s%s", s, *str ? " " : "", str);
 		}
 	case C0AggType_array:
-		return c0_type_to_cdecl(type->array.elem, c0_cdecl_paren(strf("%s[%llu]", str, (unsigned long long)type->array.len), *str));
+		return c0_type_to_cdecl(a, type->array.elem, c0_cdecl_paren(a, strf(a, "%s[%llu]", str, (unsigned long long)type->array.len), *str));
 	case C0AggType_record:
 		C0_ASSERT(type->record.name.len != 0);
-		return strf("%.*s", C0PSTR(type->record.name));
+		return strf(a, "%.*s", C0PSTR(type->record.name));
 	case C0AggType_proc:
 		{
 			C0Array(char) buf = NULL;
@@ -1437,14 +1542,14 @@ static char *c0_type_to_cdecl_internal(C0AggType *type, char const *str, bool ig
 					if (i != 0) {
 						str_buf_printf(&buf, ", ");
 					}
-					str_buf_printf(&buf, "%s", c0_type_to_cdecl(pt, ""));
+					str_buf_printf(&buf, "%s", c0_type_to_cdecl(a, pt, ""));
 				}
 				if (type->proc.flags & C0ProcFlag_variadic) {
 					str_buf_printf(&buf, ", ...");
 				}
 				str_buf_printf(&buf, ")");
 			}
-			char *result = c0_type_to_cdecl(type->proc.ret, buf);
+			char *result = c0_type_to_cdecl(a, type->proc.ret, buf);
 			c0array_delete(buf);
 			return result;
 		}
@@ -1453,8 +1558,8 @@ static char *c0_type_to_cdecl_internal(C0AggType *type, char const *str, bool ig
 	return NULL;
 }
 
-static void c0_print_instr_creation(C0Instr *instr) {
-	if (instr->agg_type) {
+static void c0_print_instr_creation(C0Arena *a, C0Instr *instr) {
+	if (instr->agg_type && instr->kind != C0Instr_index_ptr && instr->kind != C0Instr_field_ptr) {
 		switch (instr->agg_type->kind) {
 		case C0AggType_basic:
 			if (instr->agg_type->basic.type != C0Basic_void) {
@@ -1466,11 +1571,11 @@ static void c0_print_instr_creation(C0Instr *instr) {
 		}
 		char const *name = NULL;
 		if (instr->name.len != 0) {
-			name = c0_string_to_cstr(instr->name);
+			name = c0_string_to_cstr(a, instr->name);
 		} else {
-			name = strf("_C0_%u", instr->id);
+			name = strf(a, "_C0_%u", instr->id);
 		}
-		printf("%s = ", c0_type_to_cdecl(instr->agg_type, name));
+		printf("%s = ", c0_type_to_cdecl(a, instr->agg_type, name));
 	} else if (instr->basic_type != C0Basic_void) {
 		printf("%s", c0_basic_names[instr->basic_type]);
 		if (instr->basic_type != C0Basic_ptr) {
@@ -1482,7 +1587,7 @@ static void c0_print_instr_creation(C0Instr *instr) {
 }
 
 
-void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) {
+void c0_print_instr(C0Arena *a, C0Instr *instr, usize indent, bool ignore_first_identation) {
 	C0_ASSERT(instr != NULL);
 	if (instr->kind == C0Instr_label) {
 		printf("%.*s:;\n", C0PSTR(instr->name));
@@ -1523,13 +1628,13 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 		c0_print_instr_arg(instr->args[0]);
 		printf(") {\n");
 		for (usize i = 0; i < c0array_len(instr->nested_instrs); i++) {
-			c0_print_instr(instr->nested_instrs[i], indent+1, false);
+			c0_print_instr(a, instr->nested_instrs[i], indent+1, false);
 		}
 		c0_print_indent(indent);
 		printf("}");
 		if (instr->args_len == 2) {
 			printf(" else ");
-			c0_print_instr(instr->args[1], indent, true);
+			c0_print_instr(a, instr->args[1], indent, true);
 		} else {
 			printf("\n");
 		}
@@ -1538,7 +1643,7 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 	case C0Instr_loop:
 		printf("for (;;) {\n");
 		for (usize i = 0; i < c0array_len(instr->nested_instrs); i++) {
-			c0_print_instr(instr->nested_instrs[i], indent+1, false);
+			c0_print_instr(a, instr->nested_instrs[i], indent+1, false);
 		}
 		c0_print_indent(indent);
 		printf("}\n");
@@ -1547,14 +1652,18 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 	case C0Instr_block:
 		printf("{\n");
 		for (usize i = 0; i < c0array_len(instr->nested_instrs); i++) {
-			c0_print_instr(instr->nested_instrs[i], indent+1, false);
+			c0_print_instr(a, instr->nested_instrs[i], indent+1, false);
 		}
 		c0_print_indent(indent);
 		printf("}\n");
 		return;
 	}
 
-	c0_print_instr_creation(instr);
+	if ((instr->basic_type != C0Basic_void || instr->agg_type) && instr->alignment) {
+		printf("alignas(%u) ", instr->alignment);
+	}
+
+	c0_print_instr_creation(a, instr);
 
 	switch (instr->kind) {
 	case C0Instr_invalid:
@@ -1598,56 +1707,11 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 		return;
 
 	case C0Instr_addr:
+		C0_ASSERT(instr->basic_type == C0Basic_ptr);
 		C0_ASSERT(instr->args_len == 1);
-		printf("(void *)(&");
+		printf("_C0_addr(");
 		c0_print_instr_arg(instr->args[0]);
 		printf(");\n");
-		return;
-
-	case C0Instr_load_i8:
-	case C0Instr_load_u8:
-	case C0Instr_load_i16:
-	case C0Instr_load_u16:
-	case C0Instr_load_i32:
-	case C0Instr_load_u32:
-	case C0Instr_load_i64:
-	case C0Instr_load_u64:
-	case C0Instr_load_i128:
-	case C0Instr_load_u128:
-	case C0Instr_load_f16:
-	case C0Instr_load_f32:
-	case C0Instr_load_f64:
-	case C0Instr_load_ptr:
-		C0_ASSERT(instr->args_len == 1);
-		printf("(");
-		c0_print_instr_type(instr);
-		printf(" *)");
-		c0_print_instr_arg(instr->args[0]);
-		printf(";\n");
-		return;
-
-	case C0Instr_store_i8:
-	case C0Instr_store_u8:
-	case C0Instr_store_i16:
-	case C0Instr_store_u16:
-	case C0Instr_store_i32:
-	case C0Instr_store_u32:
-	case C0Instr_store_i64:
-	case C0Instr_store_u64:
-	case C0Instr_store_i128:
-	case C0Instr_store_u128:
-	case C0Instr_store_f16:
-	case C0Instr_store_f32:
-	case C0Instr_store_f64:
-	case C0Instr_store_ptr:
-		C0_ASSERT(instr->args_len == 2);
-		printf("*(");
-		c0_print_instr_type(instr->args[1]);
-		printf(" *)");
-		c0_print_instr_arg(instr->args[0]);
-		printf(" = ");
-		c0_print_instr_arg(instr->args[1]);
-		printf(";\n");
 		return;
 
 
@@ -1694,9 +1758,28 @@ void c0_print_instr(C0Instr *instr, usize indent, bool ignore_first_identation) 
 		printf(";\n");
 		return;
 
-	default:
-		printf("_C0_%s", c0_instr_names[instr->kind]);
-		break;
+	case C0Instr_index_ptr:
+		{
+			C0_ASSERT(instr->args_len == 2);
+			printf("_C0_%s(%s, ", c0_instr_names[instr->kind], c0_type_to_cdecl(a, instr->agg_type->array.elem, ""));
+			c0_print_instr_arg(instr->args[0]);
+			printf(", ");
+			c0_print_instr_arg(instr->args[1]);
+			printf(");\n");
+		}
+		return;
+	case C0Instr_field_ptr:
+		{
+			C0_ASSERT(instr->args_len == 1);
+			C0_ASSERT(instr->agg_type && instr->agg_type->kind == C0AggType_record);
+			C0_ASSERT(instr->value_u64 < c0array_len(instr->agg_type->record.names));
+			C0String field_name = instr->agg_type->record.names[instr->value_u64];
+			printf("_C0_%s(%s, ", c0_instr_names[instr->kind], c0_type_to_cdecl(a, instr->agg_type, ""));
+			c0_print_instr_arg(instr->args[0]);
+			printf(", %.*s", C0PSTR(field_name));
+			printf(");\n");
+		}
+		return;
 	}
 	printf("(");
 	for (usize i = 0; i < instr->args_len; i++) {
@@ -1828,6 +1911,8 @@ void c0_gen_instructions_print(C0Gen *gen) {
 	printf("#define C0_FORCE_INLINE __attribute__((always_inline)) inline\n");
 	printf("#endif\n\n");
 
+	printf("#define C0_INSTRUCTION static C0_FORCE_INLINE\n");
+
 	printf("typedef signed   char      i8;\n");
 	printf("typedef unsigned char      u8;\n");
 	printf("typedef signed   short     i16;\n");
@@ -1836,6 +1921,13 @@ void c0_gen_instructions_print(C0Gen *gen) {
 	printf("typedef unsigned int       u32;\n");
 	printf("typedef signed   long long i64;\n");
 	printf("typedef unsigned long long u64;\n");
+	if (gen->endian == C0Endian_big) {
+		printf("typedef struct i128 { u64 hi; u64 lo; } i128;\n");
+		printf("typedef struct u128 { u64 hi; u64 lo; } u128;\n");
+	} else {
+		printf("typedef struct i128 { u64 lo; u64 hi; } i128;\n");
+		printf("typedef struct u128 { u64 lo; u64 hi; } u128;\n");
+	}
 	printf("typedef unsigned short     f16;\n");
 	printf("typedef float              f32;\n");
 	printf("typedef double             f64;\n");
@@ -1848,13 +1940,24 @@ void c0_gen_instructions_print(C0Gen *gen) {
 
 	if (gen->instrs_to_generate[C0Instr_unreachable]) {
 		char const *name = c0_instr_names[C0Instr_unreachable];
-		printf("static C0_FORCE_INLINE _Noreturn void _C0_%s(void) {\n", name);
+		printf("C0_INSTRUCTION _Noreturn void _C0_%s(void) {\n", name);
 		printf("#if defined(_MSC_VER)\n");
 		printf("\t__assume(false);\n");
 		printf("#else\n");
 		printf("\t__builtin_unreachable();\n");
-		printf("#endif\n\n");
+		printf("#endif\n");
 		printf("}\n\n");
+	}
+
+	if (gen->instrs_to_generate[C0Instr_addr]) {
+		printf("#define _C0_addr(x) (void *)(&(x))\n\n");
+	}
+
+	if (gen->instrs_to_generate[C0Instr_index_ptr]) {
+		printf("#define _C0_%s(ELEM_TYPE, ptr, index) (void *)&((ELEM_TYPE *)(ptr))[index])\n\n", c0_instr_names[C0Instr_index_ptr]);
+	}
+	if (gen->instrs_to_generate[C0Instr_field_ptr]) {
+		printf("#define _C0_%s(RECORD_TYPE, ptr, field) (void *)&(((RECORD_TYPE *)(ptr))->field)\n\n", c0_instr_names[C0Instr_field_ptr]);
 	}
 
 	static char const *masks[16] = {};
@@ -1862,12 +1965,14 @@ void c0_gen_instructions_print(C0Gen *gen) {
 	masks[2] = "0xffff";
 	masks[4] = "0xffffffff";
 	masks[8] = "0xffffffffffffffff";
+	masks[16] = "(u128){0xffffffffffffffff, 0xffffffffffffffff}";
 
 	static char const *shift_masks[16] = {};
 	shift_masks[1] = "0x7";
 	shift_masks[2] = "0xf";
 	shift_masks[4] = "0x1f";
 	shift_masks[8] = "0x3f";
+	shift_masks[16] = "0x7f";
 
 
 	for (C0InstrKind kind = 1; kind < C0Instr_memmove; kind++) {
@@ -1879,21 +1984,122 @@ void c0_gen_instructions_print(C0Gen *gen) {
 			i32 bits         = 8*bytes;
 			char const *name = c0_instr_names[kind];
 			if (bytes == 16) {
-				c0_errorf("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
+				switch (kind) {
+				case C0Instr_load_i128:
+				case C0Instr_load_u128:
+				case C0Instr_store_i128:
+				case C0Instr_store_u128:
+					// trivial calls
+					break;
+
+				case C0Instr_clz_i128:
+				case C0Instr_clz_u128:
+				case C0Instr_ctz_i128:
+				case C0Instr_ctz_u128:
+				case C0Instr_popcnt_i128:
+				case C0Instr_popcnt_u128:
+					c0_errorf("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
+					break;
+				case C0Instr_abs_i128:
+				case C0Instr_add_i128:
+				case C0Instr_add_u128:
+				case C0Instr_sub_i128:
+				case C0Instr_sub_u128:
+				case C0Instr_mul_i128:
+				case C0Instr_mul_u128:
+				case C0Instr_quo_i128:
+				case C0Instr_quo_u128:
+				case C0Instr_rem_i128:
+				case C0Instr_rem_u128:
+				case C0Instr_shlc_i128:
+				case C0Instr_shlc_u128:
+				case C0Instr_shrc_i128:
+				case C0Instr_shrc_u128:
+				case C0Instr_shlo_i128:
+				case C0Instr_shlo_u128:
+				case C0Instr_shro_i128:
+				case C0Instr_shro_u128:
+					c0_errorf("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
+					break;
+				case C0Instr_and_i128:
+				case C0Instr_and_u128:
+				case C0Instr_or_i128:
+				case C0Instr_or_u128:
+				case C0Instr_xor_i128:
+				case C0Instr_xor_u128:
+					printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+					printf("\t%s x;\n", ts);
+					printf("\tx.lo = a.lo %s b.lo;\n", c0_instr_symbols[kind]);
+					printf("\tx.hi = a.hi %s b.hi;\n", c0_instr_symbols[kind]);
+					printf("\t return x;\n");
+					printf("}\n\n");
+					continue;
+				case C0Instr_eq_i128:
+				case C0Instr_eq_u128:
+					printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+					printf("\treturn (u8)((a.lo == b.lo) & (a.hi == b.hi));\n");
+					printf("}\n\n");
+					continue;
+				case C0Instr_neq_i128:
+				case C0Instr_neq_u128:
+					printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+					printf("\treturn (u8)((a.lo != b.lo) | (a.hi != b.hi));\n");
+					printf("}\n\n");
+					continue;
+				case C0Instr_lt_i128:
+				case C0Instr_lt_u128:
+				case C0Instr_gt_i128:
+				case C0Instr_gt_u128:
+				case C0Instr_lteq_i128:
+				case C0Instr_lteq_u128:
+				case C0Instr_gteq_i128:
+				case C0Instr_gteq_u128:
+					c0_errorf("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
+					break;
+				case C0Instr_min_i128:
+				case C0Instr_min_u128:
+				case C0Instr_max_i128:
+				case C0Instr_max_u128:
+					c0_errorf("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
+					break;
+				default:
+					c0_errorf("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
+					break;
+				}
+
 			}
 
 			switch (kind) {
 			case C0Instr_convert:
 			case C0Instr_reinterpret:
+			case C0Instr_index_ptr:
+			case C0Instr_field_ptr:
 				continue;
 			}
 
-			if (C0Instr_clz_i8 <= kind && kind <= C0Instr_popcnt_u128) {
-				c0_errorf("TODO: generate %s", c0_instr_names[kind]);
-			} else if (C0Instr_abs_i8 <= kind && kind <= C0Instr_abs_u128) {
+			if (c0_instr_arg_count[kind] == 2 && *c0_instr_symbols[kind]) {
+				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				printf("\t return (%s)(a %s b);\n", ts, c0_instr_symbols[kind]);
+				printf("}\n\n");
+				continue;
+			}
 
+			if (C0Instr_load_i8 <= kind && kind <= C0Instr_load_u128) {
+				printf("C0_INSTRUCTION %s _C0_%s(void *ptr) {\n", ts, name);
+				printf("\treturn *(%s *)(ptr);\n", ts);
+				printf("}\n\n");
+			} else if (C0Instr_store_i8 <= kind && kind <= C0Instr_store_u128) {
+				printf("C0_INSTRUCTION void _C0_%s(void *dst, %s src) {\n", name, ts);
+				printf("\t*(%s *)(dst) = src;\n", ts);
+				printf("}\n\n");
+			} else if (C0Instr_clz_i8 <= kind && kind <= C0Instr_popcnt_u128) {
+				c0_errorf("TODO: generate %s", c0_instr_names[kind]);
+			} else if (C0Instr_abs_i8 <= kind && kind <= C0Instr_abs_i128) {
+				printf("C0_INSTRUCTION %s _C0_%s(%s a) {\n", ts, name, ts);
+				printf("\treturn (a < 0)  -a : a;\n");
+				printf("}\n\n");
 			} else if (C0Instr_add_i8 <= kind && kind <= C0Instr_add_u128) {
-				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
 				printf("\t%s x = (%s)a + (%s)b;\n", uts, uts, uts);
 				char const *mask = masks[bytes];
 				if (mask) {
@@ -1901,11 +2107,9 @@ void c0_gen_instructions_print(C0Gen *gen) {
 				} else {
 					printf("\treturn (%s)(x);\n", ts);
 				}
-
-				if (mask) {}
 				printf("}\n\n");
 			} else if (C0Instr_sub_i8 <= kind && kind <= C0Instr_sub_u128) {
-				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
 				printf("\t%s x = (%s)a - (%s)b;\n", uts, uts, uts);
 				char const *mask = masks[bytes];
 				if (mask) {
@@ -1913,11 +2117,9 @@ void c0_gen_instructions_print(C0Gen *gen) {
 				} else {
 					printf("\treturn (%s)(x);\n", ts);
 				}
-
-				if (mask) {}
 				printf("}\n\n");
 			} else if (C0Instr_mul_i8 <= kind && kind <= C0Instr_mul_u128) {
-				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
 				printf("\t%s x = (%s)a * (%s)b;\n", uts, uts, uts);
 				char const *mask = masks[bytes];
 				if (mask) {
@@ -1925,11 +2127,9 @@ void c0_gen_instructions_print(C0Gen *gen) {
 				} else {
 					printf("\treturn (%s)(x);\n", ts);
 				}
-
-				if (mask) {}
 				printf("}\n\n");
 			} else if (C0Instr_quo_i8 <= kind && kind <= C0Instr_quo_u128) {
-				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s volatile b) {\n", ts, name, ts, ts);
 				if (c0_basic_is_signed[type]) {
 					printf("\ni64 x = (i64)a / (i64)b;\n");
 				} else {
@@ -1941,11 +2141,9 @@ void c0_gen_instructions_print(C0Gen *gen) {
 				} else {
 					printf("\treturn (%s)(x);\n", ts);
 				}
-
-				if (mask) {}
 				printf("}\n\n");
 			} else if (C0Instr_rem_i8 <= kind && kind <= C0Instr_rem_u128) {
-				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
 				if (c0_basic_is_signed[type]) {
 					printf("\ni64 x = (i64)a %% (i64)b;\n");
 				} else {
@@ -1957,11 +2155,9 @@ void c0_gen_instructions_print(C0Gen *gen) {
 				} else {
 					printf("\treturn (%s)(x);\n", ts);
 				}
-
-				if (mask) {}
 				printf("}\n\n");
 			} else if (C0Instr_shlc_i8 <= kind && kind <= C0Instr_shlc_u128) {
-				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
 				if (c0_basic_is_signed[type]) {
 					printf("\ni64 x = (i64)a << (i64)((u32)b & %s);\n", shift_masks[bytes]);
 				} else {
@@ -1973,11 +2169,9 @@ void c0_gen_instructions_print(C0Gen *gen) {
 				} else {
 					printf("\treturn (%s)(x);\n", ts);
 				}
-
-				if (mask) {}
 				printf("}\n\n");
 			} else if (C0Instr_shlo_i8 <= kind && kind <= C0Instr_shlo_u128) {
-				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
 				printf("\ni64 x = b < %d ? ((i64)a << (i64)((u32)b & %s)) : 0;\n", bits, shift_masks[bytes]);
 				char const *mask = masks[bytes];
 				if (mask) {
@@ -1985,11 +2179,9 @@ void c0_gen_instructions_print(C0Gen *gen) {
 				} else {
 					printf("\treturn (%s)(x);\n", ts);
 				}
-
-				if (mask) {}
 				printf("}\n\n");
 			} else if (C0Instr_shrc_i8 <= kind && kind <= C0Instr_shrc_u128) {
-				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
 				if (c0_basic_is_signed[type]) {
 					printf("\ni64 x = (i64)a >> (i64)((u64)b & %s);\n", shift_masks[bytes]);
 				} else {
@@ -2001,11 +2193,9 @@ void c0_gen_instructions_print(C0Gen *gen) {
 				} else {
 					printf("\treturn (%s)(x);\n", ts);
 				}
-
-				if (mask) {}
 				printf("}\n\n");
 			} else if (C0Instr_shro_i8 <= kind && kind <= C0Instr_shro_u128) {
-				printf("static C0_FORCE_INLINE %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
+				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", ts, name, ts, ts);
 				printf("\ni64 x = b < %d ? ((i64)a >> (i64)((u32)b & %s)) : 0;\n", bits, shift_masks[bytes]);
 				char const *mask = masks[bytes];
 				if (mask) {
@@ -2013,8 +2203,6 @@ void c0_gen_instructions_print(C0Gen *gen) {
 				} else {
 					printf("\treturn (%s)(x);\n", ts);
 				}
-
-				if (mask) {}
 				printf("}\n\n");
 			} else {
 				c0_errorf("TODO: generate %s", c0_instr_names[kind]);
@@ -2032,7 +2220,7 @@ void c0_gen_instructions_print(C0Gen *gen) {
 				char const *name = c0_instr_names[C0Instr_convert];
 				char const *from_s = c0_basic_names[from];
 				char const *to_s   = c0_basic_names[to];
-				printf("static C0_FORCE_INLINE %s _C0_%s_%s_to_%s(%s a) {\n", to_s, name, from_s, to_s, from_s);
+				printf("C0_INSTRUCTION %s _C0_%s_%s_to_%s(%s a) {\n", to_s, name, from_s, to_s, from_s);
 				if (c0_basic_type_sizes[from] > c0_basic_type_sizes[to]) {
 					printf("\treturn (%s)(a & %s);\n", to_s, masks[c0_basic_type_sizes[to]]);
 				} else {
@@ -2043,7 +2231,7 @@ void c0_gen_instructions_print(C0Gen *gen) {
 				char const *name = c0_instr_names[C0Instr_reinterpret];
 				char const *from_s = c0_basic_names[from];
 				char const *to_s   = c0_basic_names[to];
-				printf("static C0_FORCE_INLINE %s _C0_%s_%s_to_%s(%s a) {\n", to_s, name, from_s, to_s, from_s);
+				printf("C0_INSTRUCTION %s _C0_%s_%s_to_%s(%s a) {\n", to_s, name, from_s, to_s, from_s);
 				printf("\tunion {%s from; %s to} x;\n", from_s, to_s);
 				printf("\tx.from = a;\n");
 				printf("\treturn x.to;\n");
@@ -2082,9 +2270,10 @@ void c0_print_sig(C0AggType *sig, C0String name, bool ptr) {
 }
 
 void c0_print_proc(C0Proc *p) {
-	printf("%s {\n", c0_type_to_cdecl_internal(p->sig, c0_string_to_cstr(p->name), true));
+	C0Arena *a = p->arena;
+	printf("%s {\n", c0_type_to_cdecl_internal(a, p->sig, c0_string_to_cstr(a, p->name), true));
 	for (usize i = 0; i < c0array_len(p->instrs); i++) {
-		c0_print_instr(p->instrs[i], 1, false);
+		c0_print_instr(a, p->instrs[i], 1, false);
 	}
 	printf("}\n");
 }

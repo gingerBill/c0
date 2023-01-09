@@ -27,10 +27,10 @@ int main(int argc, char const **argv) {
 	c0_push_store_basic(p, decl0, c0_push_basic_i32(p, 1));
 
 	{
-		C0Instr *a = c0_push_basic_i32(p, 1);
-		C0Instr *b = c0_push_reinterpret_basic(p, C0Basic_f32, a);
-		C0Instr *c = c0_push_reinterpret_basic(p, C0Basic_i32, b);
-		c0_use(c);
+
+		C0Instr *c = c0_push_addr_of_decl(p, decl0);
+		C0Instr *elem = c0_push_index_ptr(p, array_type, c, c0_push_basic_i32(p, 1));
+		c0_use(elem);
 	}
 
 	C0Instr *x = c0_push_convert(p, C0Basic_i32, decl0);
@@ -70,7 +70,6 @@ int main(int argc, char const **argv) {
 
 	c0_print_proc(p);
 
-	printf("[DONE]\n");
 	fflush(stderr);
 	fflush(stdout);
 	c0_gen_destroy(&gen);
