@@ -57,13 +57,34 @@ struct C0String {
 #endif
 #endif
 
-#ifndef C0_ASSERT
-#include <assert.h>
-#define C0_ASSERT(cond) assert(cond)
+#ifndef C0_DEBUG_TRAP
+	#if defined(_MSC_VER)
+	 	#if _MSC_VER < 1300
+		#define C0_DEBUG_TRAP() __asm int 3 /* Trap to debugger! */
+		#else
+		#define C0_DEBUG_TRAP() __debugbreak()
+		#endif
+	#else
+		#define C0_DEBUG_TRAP() __builtin_trap()
+	#endif
 #endif
 
+static void c0_assert_handler(char const *prefix, char const *condition, char const *file, int line, char const *msg, ...);
+
+#ifndef C0_ASSERT_MSG
+#define C0_ASSERT_MSG(cond, msg, ...) do { \
+	if (!(cond)) { \
+		c0_assert_handler("Assertion Failure", #cond, __FILE__, __LINE__, msg, ##__VA_ARGS__); \
+		C0_DEBUG_TRAP(); \
+	} \
+} while (0)
+#endif
+
+#ifndef C0_ASSERT
+#define C0_ASSERT(cond) C0_ASSERT_MSG(cond, NULL)
+#endif
 #ifndef C0_PANIC
-#define C0_PANIC(msg) C0_ASSERT(0 && msg)
+#define C0_PANIC(msg) C0_ASSERT_MSG(0, msg)
 #endif
 
 
@@ -119,7 +140,7 @@ struct C0Array {
 		: false)
 
 #define c0array_ordered_remove(array, index) do { \
-	assert((usize)index < c0array_len(array)); \
+	C0_ASSERT((usize)index < c0array_len(array)); \
 	memmove(&(array)[index], &(array)[index+1], (c0array_len(array) - (index)-1) * sizeof(*(array))); \
 	c0array_meta(array)->len -= 1; \
 } while (0)
@@ -263,34 +284,40 @@ static u8 c0_basic_unsigned_instr_offset[C0Basic_COUNT] = {
 
 typedef u16 C0InstrKind;
 enum C0InstrKind_enum {
-#define C0_INSTR(name, type, arg_count, symbol) C0Instr_##name,
+#define C0_INSTR(name, arg_type, ret_type, arg_count, symbol) C0Instr_##name,
 	#include "c0_instr.h"
 #undef C0_INSTR
 	C0Instr_COUNT
 };
 
 static char const *const c0_instr_names[C0Instr_COUNT] = {
-#define C0_INSTR(name, type, arg_count, symbol) #name,
+#define C0_INSTR(name, arg_type, ret_type, arg_count, symbol) #name,
+	#include "c0_instr.h"
+#undef C0_INSTR
+};
+
+static C0BasicType const c0_instr_arg_type[C0Instr_COUNT] = {
+#define C0_INSTR(name, arg_type, ret_type, arg_count, symbol) C0Basic_##arg_type,
 	#include "c0_instr.h"
 #undef C0_INSTR
 };
 
 static C0BasicType const c0_instr_ret_type[C0Instr_COUNT] = {
-#define C0_INSTR(name, type, arg_count, symbol) C0Basic_##type,
+#define C0_INSTR(name, arg_type, ret_type, arg_count, symbol) C0Basic_##ret_type,
 	#include "c0_instr.h"
 #undef C0_INSTR
 };
 
 // negative value implies a variable length
 static i32 const c0_instr_arg_count[C0Instr_COUNT] = {
-#define C0_INSTR(name, type, arg_count, symbol) arg_count,
+#define C0_INSTR(name, arg_type, ret_type, arg_count, symbol) arg_count,
 	#include "c0_instr.h"
 #undef C0_INSTR
 };
 
 // negative value implies a variable length
 static char const *const c0_instr_symbols[C0Instr_COUNT] = {
-#define C0_INSTR(name, type, arg_count, symbol) symbol,
+#define C0_INSTR(name, arg_type, ret_type, arg_count, symbol) symbol,
 	#include "c0_instr.h"
 #undef C0_INSTR
 };
@@ -311,6 +338,8 @@ struct C0Gen {
 	C0Array(C0String)    files;
 	C0Array(C0AggType *) types;
 	C0Array(C0Proc *)    procs;
+
+	C0AggType *basic_agg[C0Basic_COUNT];
 
 	u8 instrs_to_generate[C0Instr_COUNT];
 	u8 convert_to_generate[C0Basic_COUNT][C0Basic_COUNT];
@@ -335,7 +364,8 @@ struct C0Instr {
 
 	u32      id;
 	C0String name;
-	C0Proc  *call_proc;
+	C0Proc    *call_proc;
+	C0AggType *call_sig;
 
 	C0Instr **args;
 	usize     args_len;
@@ -358,6 +388,7 @@ struct C0Proc {
 	C0String   name;
 	C0AggType *sig;
 
+	C0Array(C0Instr *) parameters;
 	C0Array(C0Instr *) instrs;
 	C0Array(C0Instr *) nested_blocks;
 	C0Array(C0Instr *) labels;

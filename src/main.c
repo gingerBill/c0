@@ -1,5 +1,43 @@
 #include "c0.c"
 
+C0Proc *test_function(C0Gen *gen) {
+	C0AggType *agg_i32 = c0_agg_type_basic(gen, C0Basic_i32);
+	// C0AggType *agg_u32 = c0_agg_type_basic(gen, C0Basic_u32);
+
+	C0Array(C0AggType *) sig_types = NULL;
+	c0array_push(sig_types, agg_i32);
+
+	C0Array(C0String) sig_names = NULL;
+	c0array_push(sig_names, C0STR("n"));
+
+	C0Proc *p = c0_proc_create(gen, C0STR("fibonacci"), c0_agg_type_proc(gen, agg_i32, sig_names, sig_types, 0));
+
+	C0Instr *n = p->parameters[0];
+
+	C0Instr *cond = c0_push_lt(p, n, c0_push_basic_i32(p, 2));
+	c0_push_if(p, cond);
+	{
+		c0_push_return(p, c0_push_basic_i32(p, 1));
+	}
+	c0_pop_if(p);
+	{
+		C0Instr *call = c0_instr_create(p, C0Instr_call);
+		call->call_sig = p->sig;
+		call->basic_type = p->sig->proc.ret->basic.type;
+
+		call->call_proc = p;
+		c0_alloc_args(p, call, 1);
+		call->args[0] = c0_use(c0_push_sub(p, n, c0_push_basic_u32(p, 1)));
+
+		C0Instr *res = c0_push_mul(p, n, c0_instr_push(p, call));
+		c0_push_return(p, res);
+	}
+
+
+	return c0_proc_finish(p);
+}
+
+
 int main(int argc, char const **argv) {
 	setvbuf(stdout, NULL, _IONBF, 0);
 	setvbuf(stderr, NULL, _IONBF, 0);
@@ -8,7 +46,18 @@ int main(int argc, char const **argv) {
 	C0Gen gen = {0};
 	c0_gen_init(&gen);
 
-	C0AggType *agg_i32 = c0_agg_type_basic(&gen, C0Basic_i32);
+	C0Proc *p = test_function(&gen);
+	c0_gen_instructions_print(&gen);
+	c0_print_proc(p);
+
+	fflush(stderr);
+	fflush(stdout);
+	c0_gen_destroy(&gen);
+	return 0;
+}
+
+#if 0
+C0AggType *agg_i32 = c0_agg_type_basic(&gen, C0Basic_i32);
 	C0AggType *agg_ptr = c0_agg_type_basic(&gen, C0Basic_ptr);
 	C0Array(C0AggType *) sig_types = NULL;
 	c0array_push(sig_types, agg_ptr);
@@ -69,9 +118,4 @@ int main(int argc, char const **argv) {
 	c0_gen_instructions_print(&gen);
 
 	c0_print_proc(p);
-
-	fflush(stderr);
-	fflush(stdout);
-	c0_gen_destroy(&gen);
-	return 0;
-}
+#endif
