@@ -1,23 +1,22 @@
 #include "c0.c"
 
 C0Proc *test_function(C0Gen *gen) {
-	C0AggType *agg_i32 = c0_agg_type_basic(gen, C0Basic_i32);
-	// C0AggType *agg_u32 = c0_agg_type_basic(gen, C0Basic_u32);
+	C0AggType *agg_u32 = c0_agg_type_basic(gen, C0Basic_u32);
 
 	C0Array(C0AggType *) sig_types = NULL;
-	c0array_push(sig_types, agg_i32);
+	c0array_push(sig_types, agg_u32);
 
 	C0Array(C0String) sig_names = NULL;
 	c0array_push(sig_names, C0STR("n"));
 
-	C0Proc *p = c0_proc_create(gen, C0STR("fibonacci"), c0_agg_type_proc(gen, agg_i32, sig_names, sig_types, 0));
+	C0Proc *p = c0_proc_create(gen, C0STR("fibonacci"), c0_agg_type_proc(gen, agg_u32, sig_names, sig_types, 0));
 
 	C0Instr *n = p->parameters[0];
 
-	C0Instr *cond = c0_push_lt(p, n, c0_push_basic_i32(p, 2));
+	C0Instr *cond = c0_push_lt(p, n, c0_push_basic_u32(p, 2));
 	c0_push_if(p, cond);
 	{
-		c0_push_return(p, c0_push_basic_i32(p, 1));
+		c0_push_return(p, c0_push_basic_u32(p, 1));
 	}
 	c0_pop_if(p);
 	{
