@@ -1339,6 +1339,18 @@ C0Instr *c0_push_memset(C0Proc *p, C0Instr *dst, u8 val, C0Instr *size) {
 	return c0_instr_push(p, instr);
 }
 
+C0Instr *c0_push_call_proc1(C0Proc *p, C0Proc *call_proc, C0Instr *arg0) {
+	C0Instr *call = c0_instr_create(p, C0Instr_call);
+	call->call_sig = call_proc->sig;
+	call->basic_type = call_proc->sig->proc.ret->basic.type;
+
+	call->call_proc = call_proc;
+	c0_alloc_args(p, call, 1);
+	call->args[0] = c0_use(arg0);
+
+	return c0_instr_push(p, call);
+}
+
 C0Instr *c0_push_decl_basic_with_alignment(C0Proc *p, C0BasicType type, C0String name, u32 alignment) {
 	C0_ASSERT((alignment & (alignment-1)) == 0);
 	C0_ASSERT(type != C0Basic_void);
@@ -2409,5 +2421,5 @@ void c0_print_proc(C0Proc *p) {
 	for (usize i = 0; i < c0array_len(p->instrs); i++) {
 		c0_print_instr(a, p->instrs[i], 1, false);
 	}
-	printf("}\n");
+	printf("}\n\n");
 }
