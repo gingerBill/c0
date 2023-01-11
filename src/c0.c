@@ -589,7 +589,7 @@ C0Proc *c0_proc_create(C0Gen *gen, C0String name, C0AggType *sig) {
 	p->arena = arena;
 	p->name  = c0_arena_str_dup(p->arena, name);
 	C0_ASSERT(sig && sig->kind == C0AggType_proc);
-	p->sig   = sig;
+	p->sig = sig;
 
 	usize n = c0array_len(sig->proc.names);
 	if (n) {

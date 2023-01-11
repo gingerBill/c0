@@ -1,6 +1,6 @@
 #include "c0.c"
 
-C0Proc *test_function(C0Gen *gen) {
+C0Proc *test_factorial(C0Gen *gen) {
 	C0AggType *agg_u32 = c0_agg_type_basic(gen, C0Basic_u32);
 
 	C0Array(C0AggType *) sig_types = NULL;
@@ -9,7 +9,7 @@ C0Proc *test_function(C0Gen *gen) {
 	C0Array(C0String) sig_names = NULL;
 	c0array_push(sig_names, C0STR("n"));
 
-	C0Proc *p = c0_proc_create(gen, C0STR("fibonacci"), c0_agg_type_proc(gen, agg_u32, sig_names, sig_types, 0));
+	C0Proc *p = c0_proc_create(gen, C0STR("factorial"), c0_agg_type_proc(gen, agg_u32, sig_names, sig_types, 0));
 
 	C0Instr *n = p->parameters[0];
 
@@ -45,9 +45,9 @@ int main(int argc, char const **argv) {
 	C0Gen gen = {0};
 	c0_gen_init(&gen);
 
-	C0Proc *p = test_function(&gen);
+	C0Proc *factorial = test_factorial(&gen);
 	c0_gen_instructions_print(&gen);
-	c0_print_proc(p);
+	c0_print_proc(factorial);
 
 	fflush(stderr);
 	fflush(stdout);
