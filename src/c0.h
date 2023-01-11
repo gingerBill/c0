@@ -240,6 +240,26 @@ static C0BasicType c0_basic_unsigned_type[C0Basic_COUNT] = {
 	C0Basic_ptr,
 };
 
+static u8 c0_basic_unsigned_instr_offset[C0Basic_COUNT] = {
+	0,
+	0,
+	0,
+	1,
+	1,
+	2,
+	2,
+	3,
+	3,
+	4,
+	4,
+	5,
+	6,
+	7,
+	8,
+};
+
+
+
 
 typedef u16 C0InstrKind;
 enum C0InstrKind_enum {
@@ -418,7 +438,7 @@ C0Instr *c0_push_basic_u32(C0Proc *p, u32 value);
 C0Instr *c0_push_basic_i64(C0Proc *p, i64 value);
 C0Instr *c0_push_basic_u64(C0Proc *p, u64 value);
 C0Instr *c0_push_basic_ptr(C0Proc *p, u64 value);
-C0Instr *c0_push_bin(C0Proc *p, C0InstrKind kind, C0Instr *left, C0Instr *right);
+C0Instr *c0_push_bin(C0Proc *p, C0InstrKind kind, C0BasicType type, C0Instr *left, C0Instr *right);
 
 C0Instr *c0_push_negf(C0Proc *p, C0Instr *arg);
 C0Instr *c0_push_noti(C0Proc *p, C0Instr *arg);
