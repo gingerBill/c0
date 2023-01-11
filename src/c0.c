@@ -820,9 +820,13 @@ C0Instr *c0_push_bin(C0Proc *p, C0InstrKind kind, C0BasicType type, C0Instr *lef
 	C0_ASSERT(left);
 	C0_ASSERT(right);
 	C0_ASSERT(type != C0Basic_void);
+	C0_ASSERT_MSG(c0_basic_unsigned_type[left->basic_type] == c0_basic_unsigned_type[right->basic_type],
+	              "%s != %s", c0_basic_names[left->basic_type], c0_basic_names[right->basic_type]);
 
 	C0Instr *bin = c0_instr_create(p, kind);
-	bin->basic_type = type;
+	if (type != left->basic_type) {
+		bin->basic_type = type;
+	}
 	c0_alloc_args(p, bin, 2);
 	bin->args[0] = c0_use(left);
 	bin->args[1] = c0_use(right);
