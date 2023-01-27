@@ -94,9 +94,9 @@ static void c0_assert_handler(char const *prefix, char const *condition, char co
 #endif
 
 struct C0Array {
-	alignas(2*sizeof(usize))
-	usize len;
-	usize cap;
+	alignas(2*sizeof(isize))
+	isize len;
+	isize cap;
 };
 
 #define C0Array(T) T *
@@ -140,7 +140,7 @@ struct C0Array {
 		: false)
 
 #define c0array_ordered_remove(array, index) do { \
-	C0_ASSERT((usize)index < c0array_len(array)); \
+	C0_ASSERT((usize)index < (usize)c0array_len(array)); \
 	memmove(&(array)[index], &(array)[index+1], (c0array_len(array) - (index)-1) * sizeof(*(array))); \
 	c0array_meta(array)->len -= 1; \
 } while (0)
@@ -357,19 +357,50 @@ struct C0Instr {
 	C0BasicType basic_type;
 	u16         padding0;
 	u32         uses;
-	u32         alignment;
+	u32         alignment; // optional
 	C0Instr *   parent;
 
-	C0AggType *agg_type;
+	C0AggType *agg_type; // if set, overrides `basic_type`
 
 	u32      id;
 	C0String name;
 	C0Proc    *call_proc;
 	C0AggType *call_sig;
 
+	/*
+		unary expression:  args_len == 1
+		conversion:        args_len == 1
+		binary expression: args_len == 2
+		load:              args_len == 1
+		store:             args_len == 2
+		addr:              args_len == 1
+		index_ptr:         args_len == 2
+		atomic_cas:        args_len == 3
+			args[0] : obj
+			args[1] : expected
+			args[2] : desired
+		memmove: args_len == 3
+			args[0] : dst
+			args[1] : src
+			args[2] : size
+		memset: args_len == 3
+			args[0] : dst
+			args[1] : val
+			args[2] : size
+		if statement
+			args[0] : condition
+			args[1] : else statement
+		return statement
+			args[0] : return value (if exists)
+	*/
 	C0Instr **args;
-	usize     args_len;
+	isize     args_len;
 
+	/*
+		block
+		if (block) (not else statement)
+		loop
+	*/
 	C0Array(C0Instr *) nested_instrs;
 
 	union {
@@ -387,11 +418,13 @@ struct C0Proc {
 	C0Gen *    gen;
 	C0String   name;
 	C0AggType *sig;
+	void *     user_data;
 
 	C0Array(C0Instr *) parameters;
 	C0Array(C0Instr *) instrs;
 	C0Array(C0Instr *) nested_blocks;
 	C0Array(C0Instr *) labels;
+
 };
 
 typedef u32 C0AggTypeKind;
