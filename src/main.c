@@ -71,9 +71,13 @@ int main(int argc, char const **argv) {
 
 	C0Proc *factorial = test_factorial(&gen);
 	C0Proc *fibonacci = test_fibonacci(&gen);
-	c0_gen_instructions_print(&gen);
-	c0_print_proc(factorial);
-	c0_print_proc(fibonacci);
+
+	C0Printer printer = {};
+	printer.flags |= C0PrinterFlag_UseInlineArgs;
+
+	c0_gen_instructions_print(&printer, &gen);
+	c0_print_proc(&printer, factorial);
+	c0_print_proc(&printer, fibonacci);
 
 	fflush(stderr);
 	fflush(stdout);
