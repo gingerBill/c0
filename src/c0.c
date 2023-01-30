@@ -370,8 +370,9 @@ i64 c0_basic_type_size(C0Gen *gen, C0BasicType type) {
 }
 
 void c0_gen_init(C0Gen *gen) {
-	gen->ptr_size = 8;
 	memset(gen, 0, sizeof(*gen));
+
+	gen->ptr_size = 8;
 	for (C0BasicType kind = C0Basic_void; kind < C0Basic_COUNT; kind++) {
 		C0AggType *t = c0_arena_new(&gen->arena, C0AggType);
 		t->kind = C0AggType_basic;

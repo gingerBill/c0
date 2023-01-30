@@ -352,13 +352,19 @@ struct C0Loc {
 	i32 column;
 };
 
+typedef u32 C0InstrFlags;
+enum C0InstrFlags_enum {
+	C0InstrFlag_Print_Inline = 1u<<16u,
+};
+
 struct C0Instr {
-	C0InstrKind kind;
-	C0BasicType basic_type;
-	u16         padding0;
-	u32         uses;
-	u32         alignment; // optional
-	C0Instr *   parent;
+	C0InstrKind  kind;
+	C0BasicType  basic_type;
+	u16          padding0;
+	u32          uses;
+	u32          alignment; // optional
+	C0Instr *    parent;
+	C0InstrFlags flags;
 
 	C0AggType *agg_type; // if set, overrides `basic_type`
 
