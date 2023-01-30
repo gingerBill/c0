@@ -7,26 +7,40 @@ typedef struct C0Printer C0Printer;
 struct C0Printer {
 	C0PrinterFlags flags;
 	C0Arena arena;
+
+	void (*custom_vprintf)(C0Printer *p, char const *fmt, va_list va);
+	void *user_data;
 };
+
+void c0_printf(C0Printer *p, char const *fmt, ...) {
+	va_list va;
+	va_start(va, fmt);
+	if (p->custom_vprintf) {
+		p->custom_vprintf(p, fmt, va);
+	} else {
+		vfprintf(stdout, fmt, va);
+	}
+	va_end(va);
+}
 
 
 void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent);
 
-void c0_print_indent(usize indent) {
+void c0_print_indent(C0Printer *p, usize indent) {
 	while (indent --> 0) {
-		printf("\t");
+		c0_printf(p, "\t");
 	}
 }
 
-void c0_print_agg_type(C0AggType *type, C0String name) {
+void c0_print_agg_type(C0Printer *p, C0AggType *type, C0String name) {
 	switch (type->kind) {
 	case C0AggType_basic:
-		printf("%s", c0_basic_names[type->basic.type]);
+		c0_printf(p, "%s", c0_basic_names[type->basic.type]);
 		break;
 
 	case C0AggType_array:
-		c0_print_agg_type(type->array.elem, {0});
-		printf(" (%.*s)[%lld]", C0PSTR(name), (long long)type->array.len);
+		c0_print_agg_type(p, type->array.elem, {0});
+		c0_printf(p, " (%.*s)[%lld]", C0PSTR(name), (long long)type->array.len);
 		break;
 	case C0AggType_record:
 		c0_errorf("TODO record printing");
@@ -38,7 +52,7 @@ void c0_print_agg_type(C0AggType *type, C0String name) {
 }
 
 
-bool c0_print_instr_type(C0Instr *instr) {
+bool c0_print_instr_type(C0Printer *p, C0Instr *instr) {
 	if (instr->agg_type) {
 		switch (instr->agg_type->kind) {
 		case C0AggType_basic:
@@ -47,10 +61,10 @@ bool c0_print_instr_type(C0Instr *instr) {
 			}
 		}
 		C0String empty_name = {0};
-		c0_print_agg_type(instr->agg_type, empty_name);
+		c0_print_agg_type(p, instr->agg_type, empty_name);
 		return true;
 	} else if (instr->basic_type != C0Basic_void) {
-		printf("%s", c0_basic_names[instr->basic_type]);
+		c0_printf(p, "%s", c0_basic_names[instr->basic_type]);
 		return true;
 	}
 	return false;
@@ -61,9 +75,9 @@ void c0_print_instr_arg(C0Printer *p, C0Instr *instr, usize indent) {
 		return;
 	}
 	if (instr->name.len != 0) {
-		printf("%.*s", C0PSTR(instr->name));
+		c0_printf(p, "%.*s", C0PSTR(instr->name));
 	} else {
-		printf("_C0_%u", instr->id);
+		c0_printf(p, "_C0_%u", instr->id);
 	}
 }
 
@@ -174,9 +188,9 @@ static void c0_print_instr_creation(C0Printer *p, C0Instr *instr) {
 		switch (instr->agg_type->kind) {
 		case C0AggType_basic:
 			if (instr->agg_type->basic.type != C0Basic_void) {
-				printf("%s ", c0_basic_names[instr->basic_type]);
+				c0_printf(p, "%s ", c0_basic_names[instr->basic_type]);
 				c0_print_instr_arg(p, instr, 0);
-				printf(" = ");
+				c0_printf(p, " = ");
 			}
 			return;
 		}
@@ -186,14 +200,14 @@ static void c0_print_instr_creation(C0Printer *p, C0Instr *instr) {
 		} else {
 			name = strf(&p->arena, "_C0_%u", instr->id);
 		}
-		printf("%s = ", c0_type_to_cdecl(&p->arena, instr->agg_type, name));
+		c0_printf(p, "%s = ", c0_type_to_cdecl(&p->arena, instr->agg_type, name));
 	} else if (instr->basic_type != C0Basic_void) {
-		printf("%s", c0_basic_names[instr->basic_type]);
+		c0_printf(p, "%s", c0_basic_names[instr->basic_type]);
 		if (instr->basic_type != C0Basic_ptr) {
-			printf(" ");
+			c0_printf(p, " ");
 		}
 		c0_print_instr_arg(p, instr, 0);
-		printf(" = ");
+		c0_printf(p, " = ");
 	}
 }
 
@@ -210,62 +224,62 @@ void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent) {
 		case C0Basic_i16:
 		case C0Basic_i32:
 		case C0Basic_i64:
-			printf("%lld", (long long)instr->value_i64);
+			c0_printf(p, "%lld", (long long)instr->value_i64);
 			break;
 		case C0Basic_u8:
 		case C0Basic_u16:
 		case C0Basic_u32:
 		case C0Basic_u64:
-			printf("%llu", (unsigned long long)instr->value_u64);
+			c0_printf(p, "%llu", (unsigned long long)instr->value_u64);
 			break;
 		case C0Basic_i128:
 		case C0Basic_u128:
 			c0_errorf("todo 128 bit integers");
 			break;
 		case C0Basic_f16:
-			printf("%u", instr->value_f16);
+			c0_printf(p, "%u", instr->value_f16);
 			break;
 		case C0Basic_f32:
-			printf("%g", instr->value_f32);
+			c0_printf(p, "%g", instr->value_f32);
 			break;
 		case C0Basic_f64:
-			printf("%g", instr->value_f64);
+			c0_printf(p, "%g", instr->value_f64);
 			break;
 		case C0Basic_ptr:
-			printf("%llx", (unsigned long long)instr->value_u64);
+			c0_printf(p, "%llx", (unsigned long long)instr->value_u64);
 			break;
 		default:
-			printf("{0}");
+			c0_printf(p, "{0}");
 		}
 		return;
 
 	case C0Instr_addr:
 		C0_ASSERT(instr->basic_type == C0Basic_ptr);
 		C0_ASSERT(instr->args_len == 1);
-		printf("_C0_addr(");
+		c0_printf(p, "_C0_addr(");
 		c0_print_instr_arg(p, instr->args[0], indent);
-		printf(")");
+		c0_printf(p, ")");
 		return;
 
 
 	case C0Instr_convert:
 		C0_ASSERT(instr->args_len == 1);
-		printf("_C0_convert_%s_to_%s(", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
+		c0_printf(p, "_C0_convert_%s_to_%s(", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
 		c0_print_instr_arg(p, instr->args[0], indent);
-		printf(")");
+		c0_printf(p, ")");
 		return;
 	case C0Instr_reinterpret:
 		C0_ASSERT(instr->args_len == 1);
-		printf("_C0_reinterpret_%s_to_%s(", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
+		c0_printf(p, "_C0_reinterpret_%s_to_%s(", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
 		c0_print_instr_arg(p, instr->args[0], indent);
-		printf(")");
+		c0_printf(p, ")");
 		return;
 
 	case C0Instr_atomic_thread_fence:
 	case C0Instr_atomic_signal_fence:
 	case C0Instr_memmove:
 	case C0Instr_memset:
-		printf("%s", c0_instr_names[instr->kind]);
+		c0_printf(p, "%s", c0_instr_names[instr->kind]);
 		break;
 
 	case C0Instr_select_u8:
@@ -279,19 +293,19 @@ void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent) {
 	case C0Instr_select_ptr:
 		C0_ASSERT(instr->args_len == 3);
 		c0_print_instr_arg(p, instr->args[0], 0);
-		printf(" ? ");
+		c0_printf(p, " ? ");
 		c0_print_instr_arg(p, instr->args[1], 0);
-		printf(" : ");
+		c0_printf(p, " : ");
 		c0_print_instr_arg(p, instr->args[2], 0);
 		return;
 
 	case C0Instr_index_ptr:
 		C0_ASSERT(instr->args_len == 2);
-		printf("_C0_%s(%s, ", c0_instr_names[instr->kind], c0_type_to_cdecl(&p->arena, instr->agg_type->array.elem, ""));
+		c0_printf(p, "_C0_%s(%s, ", c0_instr_names[instr->kind], c0_type_to_cdecl(&p->arena, instr->agg_type->array.elem, ""));
 		c0_print_instr_arg(p, instr->args[0], 0);
-		printf(", ");
+		c0_printf(p, ", ");
 		c0_print_instr_arg(p, instr->args[1], 0);
-		printf(")");
+		c0_printf(p, ")");
 		return;
 	case C0Instr_field_ptr:
 		{
@@ -299,24 +313,24 @@ void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent) {
 			C0_ASSERT(instr->agg_type && instr->agg_type->kind == C0AggType_record);
 			C0_ASSERT(instr->value_u64 < (u64)c0array_len(instr->agg_type->record.names));
 			C0String field_name = instr->agg_type->record.names[instr->value_u64];
-			printf("_C0_%s(%s, ", c0_instr_names[instr->kind], c0_type_to_cdecl(&p->arena, instr->agg_type, ""));
+			c0_printf(p, "_C0_%s(%s, ", c0_instr_names[instr->kind], c0_type_to_cdecl(&p->arena, instr->agg_type, ""));
 			c0_print_instr_arg(p, instr->args[0], 0);
-			printf(", %.*s", C0PSTR(field_name));
-			printf(")");
+			c0_printf(p, ", %.*s", C0PSTR(field_name));
+			c0_printf(p, ")");
 		}
 		return;
 
 	case C0Instr_call:
 		C0_ASSERT(instr->call_proc);
-		printf("%.*s", C0PSTR(instr->call_proc->name));
+		c0_printf(p, "%.*s", C0PSTR(instr->call_proc->name));
 		break;
 
 	default:
-		printf("_C0_%s", c0_instr_names[instr->kind]);
+		c0_printf(p, "_C0_%s", c0_instr_names[instr->kind]);
 		break;
 	}
 
-	printf("(");
+	c0_printf(p, "(");
 	bool any_inline = false;
 	bool any_call = false;
 	if (instr->args_len > 1) {
@@ -333,31 +347,31 @@ void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent) {
 
 	bool do_indent = any_inline && any_call;
 	if (do_indent) {
-		printf("\n");
+		c0_printf(p, "\n");
 	}
 	if (do_indent) {
 		for (isize i = 0; i < instr->args_len; i++) {
 			C0Instr *arg = instr->args[i];
-			c0_print_indent(indent+1);
+			c0_print_indent(p, indent+1);
 			c0_print_instr_arg(p, arg, indent+1);
 			if (i+1 < instr->args_len) {
-				printf(",");
+				c0_printf(p, ",");
 			}
-			printf("\n");
+			c0_printf(p, "\n");
 		}
 	} else {
 		for (isize i = 0; i < instr->args_len; i++) {
 			if (i != 0) {
-				printf(", ");
+				c0_printf(p, ", ");
 			}
 			C0Instr *arg = instr->args[i];
 			c0_print_instr_arg(p, arg, indent);
 		}
 	}
 	if (do_indent) {
-		c0_print_indent(indent);
+		c0_print_indent(p, indent);
 	}
-	printf(")");
+	c0_printf(p, ")");
 }
 
 bool c0_instr_can_be_printed_inline(C0Instr *instr) {
@@ -384,143 +398,143 @@ void c0_print_instr(C0Printer *p, C0Instr *instr, usize indent, bool ignore_firs
 	}
 
 	if (instr->kind == C0Instr_label) {
-		printf("%.*s:;\n", C0PSTR(instr->name));
+		c0_printf(p, "%.*s:;\n", C0PSTR(instr->name));
 		return;
 	}
 	if (!ignore_first_identation) {
-		c0_print_indent(indent);
+		c0_print_indent(p, indent);
 	}
 
 	switch (instr->kind) {
 	case C0Instr_continue:
-		printf("continue;\n");
+		c0_printf(p, "continue;\n");
 		return;
 	case C0Instr_break:
-		printf("break;\n");
+		c0_printf(p, "break;\n");
 		return;
 	case C0Instr_return:
-		printf("return");
+		c0_printf(p, "return");
 		if (instr->args_len != 0) {
 			C0_ASSERT(instr->args_len == 1);
-			printf(" ");
+			c0_printf(p, " ");
 			c0_print_instr_arg(p, instr->args[0], indent);
 		}
-		printf(";\n");
+		c0_printf(p, ";\n");
 		return;
 	case C0Instr_unreachable:
-		printf("_C0_unreachable();\n");
+		c0_printf(p, "_C0_unreachable();\n");
 		return;
 	case C0Instr_goto:
 		C0_ASSERT(instr->args_len == 1);
 		C0_ASSERT(instr->args[0]->kind == C0Instr_label);
-		printf("goto %.*s;\n", C0PSTR(instr->args[0]->name));
+		c0_printf(p, "goto %.*s;\n", C0PSTR(instr->args[0]->name));
 		return;
 
 	case C0Instr_if:
 		C0_ASSERT(instr->args_len >= 1);
-		printf("if (");
+		c0_printf(p, "if (");
 		c0_print_instr_arg(p, instr->args[0], indent);
-		printf(") {\n");
+		c0_printf(p, ") {\n");
 		for (isize i = 0; i < c0array_len(instr->nested_instrs); i++) {
 			c0_print_instr(p, instr->nested_instrs[i], indent+1, false);
 		}
-		c0_print_indent(indent);
-		printf("}");
+		c0_print_indent(p, indent);
+		c0_printf(p, "}");
 		if (instr->args_len == 2) {
-			printf(" else ");
+			c0_printf(p, " else ");
 			c0_print_instr(p, instr->args[1], indent, true);
 		} else {
-			printf("\n");
+			c0_printf(p, "\n");
 		}
 		return;
 
 	case C0Instr_loop:
-		printf("for (;;) {\n");
+		c0_printf(p, "for (;;) {\n");
 		for (isize i = 0; i < c0array_len(instr->nested_instrs); i++) {
 			c0_print_instr(p, instr->nested_instrs[i], indent+1, false);
 		}
-		c0_print_indent(indent);
-		printf("}\n");
+		c0_print_indent(p, indent);
+		c0_printf(p, "}\n");
 		return;
 
 	case C0Instr_block:
-		printf("{\n");
+		c0_printf(p, "{\n");
 		for (isize i = 0; i < c0array_len(instr->nested_instrs); i++) {
 			c0_print_instr(p, instr->nested_instrs[i], indent+1, false);
 		}
-		c0_print_indent(indent);
-		printf("}\n");
+		c0_print_indent(p, indent);
+		c0_printf(p, "}\n");
 		return;
 	}
 
 	if ((instr->basic_type != C0Basic_void || instr->agg_type) && instr->alignment) {
-		printf("alignas(%u) ", instr->alignment);
+		c0_printf(p, "alignas(%u) ", instr->alignment);
 	}
 
 	c0_print_instr_creation(p, instr);
 	c0_print_instr_expr(p, instr, indent);
-	printf(";\n");
+	c0_printf(p, ";\n");
 }
 
 void c0_gen_instructions_print(C0Printer *p, C0Gen *gen) {
-	printf("#if !defined(__STDC_VERSION__) || (__STDC_VERSION__ < 201112L)\n");
-	printf("#error C0 requires a C11 compiler\n");
-	printf("#endif\n\n");
-	printf("#define C0_GENERATED 1\n\n");
+	c0_printf(p, "#if !defined(__STDC_VERSION__) || (__STDC_VERSION__ < 201112L)\n");
+	c0_printf(p, "#error C0 requires a C11 compiler\n");
+	c0_printf(p, "#endif\n\n");
+	c0_printf(p, "#define C0_GENERATED 1\n\n");
 
-	printf("#if defined(_MSC_VER)\n");
-	printf("#define C0_FORCE_INLINE __forceinline\n");
-	printf("#else\n");
-	printf("#define C0_FORCE_INLINE __attribute__((always_inline)) inline\n");
-	printf("#endif\n\n");
+	c0_printf(p, "#if defined(_MSC_VER)\n");
+	c0_printf(p, "#define C0_FORCE_INLINE __forceinline\n");
+	c0_printf(p, "#else\n");
+	c0_printf(p, "#define C0_FORCE_INLINE __attribute__((always_inline)) inline\n");
+	c0_printf(p, "#endif\n\n");
 
-	printf("#define C0_INSTRUCTION static C0_FORCE_INLINE\n");
+	c0_printf(p, "#define C0_INSTRUCTION static C0_FORCE_INLINE\n");
 
-	printf("typedef signed   char      i8;\n");
-	printf("typedef unsigned char      u8;\n");
-	printf("typedef signed   short     i16;\n");
-	printf("typedef unsigned short     u16;\n");
-	printf("typedef signed   int       i32;\n");
-	printf("typedef unsigned int       u32;\n");
-	printf("typedef signed   long long i64;\n");
-	printf("typedef unsigned long long u64;\n");
+	c0_printf(p, "typedef signed   char      i8;\n");
+	c0_printf(p, "typedef unsigned char      u8;\n");
+	c0_printf(p, "typedef signed   short     i16;\n");
+	c0_printf(p, "typedef unsigned short     u16;\n");
+	c0_printf(p, "typedef signed   int       i32;\n");
+	c0_printf(p, "typedef unsigned int       u32;\n");
+	c0_printf(p, "typedef signed   long long i64;\n");
+	c0_printf(p, "typedef unsigned long long u64;\n");
 	if (gen->endian == C0Endian_big) {
-		printf("typedef struct i128 { u64 hi; u64 lo; } i128;\n");
-		printf("typedef struct u128 { u64 hi; u64 lo; } u128;\n");
+		c0_printf(p, "typedef struct i128 { u64 hi; u64 lo; } i128;\n");
+		c0_printf(p, "typedef struct u128 { u64 hi; u64 lo; } u128;\n");
 	} else {
-		printf("typedef struct i128 { u64 lo; u64 hi; } i128;\n");
-		printf("typedef struct u128 { u64 lo; u64 hi; } u128;\n");
+		c0_printf(p, "typedef struct i128 { u64 lo; u64 hi; } i128;\n");
+		c0_printf(p, "typedef struct u128 { u64 lo; u64 hi; } u128;\n");
 	}
-	printf("typedef unsigned short     f16;\n");
-	printf("typedef float              f32;\n");
-	printf("typedef double             f64;\n");
+	c0_printf(p, "typedef unsigned short     f16;\n");
+	c0_printf(p, "typedef float              f32;\n");
+	c0_printf(p, "typedef double             f64;\n");
 
-	printf("\n");
+	c0_printf(p, "\n");
 
 	if (gen->instrs_to_generate[C0Instr_memmove] || gen->instrs_to_generate[C0Instr_memset]) {
-		printf("#include <string.h>\n");
+		c0_printf(p, "#include <string.h>\n");
 	}
 
 	if (gen->instrs_to_generate[C0Instr_unreachable]) {
 		char const *name = c0_instr_names[C0Instr_unreachable];
-		printf("C0_INSTRUCTION _Noreturn void _C0_%s(void) {\n", name);
-		printf("#if defined(_MSC_VER)\n");
-		printf("\t__assume(false);\n");
-		printf("#else\n");
-		printf("\t__builtin_unreachable();\n");
-		printf("#endif\n");
-		printf("}\n\n");
+		c0_printf(p, "C0_INSTRUCTION _Noreturn void _C0_%s(void) {\n", name);
+		c0_printf(p, "#if defined(_MSC_VER)\n");
+		c0_printf(p, "\t__assume(false);\n");
+		c0_printf(p, "#else\n");
+		c0_printf(p, "\t__builtin_unreachable();\n");
+		c0_printf(p, "#endif\n");
+		c0_printf(p, "}\n\n");
 	}
 
 	if (gen->instrs_to_generate[C0Instr_addr]) {
-		printf("#define _C0_addr(x) (void *)(&(x))\n\n");
+		c0_printf(p, "#define _C0_addr(x) (void *)(&(x))\n\n");
 	}
 
 	if (gen->instrs_to_generate[C0Instr_index_ptr]) {
-		printf("#define _C0_%s(ELEM_TYPE, ptr, index) (void *)&((ELEM_TYPE *)(ptr))[index]\n\n", c0_instr_names[C0Instr_index_ptr]);
+		c0_printf(p, "#define _C0_%s(ELEM_TYPE, ptr, index) (void *)&((ELEM_TYPE *)(ptr))[index]\n\n", c0_instr_names[C0Instr_index_ptr]);
 	}
 	if (gen->instrs_to_generate[C0Instr_field_ptr]) {
-		printf("#define _C0_%s(RECORD_TYPE, ptr, field) (void *)&(((RECORD_TYPE *)(ptr))->field\n\n", c0_instr_names[C0Instr_field_ptr]);
+		c0_printf(p, "#define _C0_%s(RECORD_TYPE, ptr, field) (void *)&(((RECORD_TYPE *)(ptr))->field\n\n", c0_instr_names[C0Instr_field_ptr]);
 	}
 
 	static char const *masks[16] = {};
@@ -599,22 +613,22 @@ void c0_gen_instructions_print(C0Printer *p, C0Gen *gen) {
 				case C0Instr_and_u128:
 				case C0Instr_or_u128:
 				case C0Instr_xor_u128:
-					printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
-					printf("\t%s x;\n", rs);
-					printf("\tx.lo = a.lo %s b.lo;\n", c0_instr_symbols[kind]);
-					printf("\tx.hi = a.hi %s b.hi;\n", c0_instr_symbols[kind]);
-					printf("\t return x;\n");
-					printf("}\n\n");
+					c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
+					c0_printf(p, "\t%s x;\n", rs);
+					c0_printf(p, "\tx.lo = a.lo %s b.lo;\n", c0_instr_symbols[kind]);
+					c0_printf(p, "\tx.hi = a.hi %s b.hi;\n", c0_instr_symbols[kind]);
+					c0_printf(p, "\t return x;\n");
+					c0_printf(p, "}\n\n");
 					continue;
 				case C0Instr_eq_u128:
-					printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
-					printf("\treturn (%s)((a.lo == b.lo) & (a.hi == b.hi));\n", rs);
-					printf("}\n\n");
+					c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
+					c0_printf(p, "\treturn (%s)((a.lo == b.lo) & (a.hi == b.hi));\n", rs);
+					c0_printf(p, "}\n\n");
 					continue;
 				case C0Instr_neq_u128:
-					printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
-					printf("\treturn (%s)((a.lo != b.lo) | (a.hi != b.hi));\n", rs);
-					printf("}\n\n");
+					c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
+					c0_printf(p, "\treturn (%s)((a.lo != b.lo) | (a.hi != b.hi));\n", rs);
+					c0_printf(p, "}\n\n");
 					continue;
 				case C0Instr_lt_i128:
 				case C0Instr_lt_u128:
@@ -649,129 +663,129 @@ void c0_gen_instructions_print(C0Printer *p, C0Gen *gen) {
 
 
 			if (C0Instr_load_u8 <= kind && kind <= C0Instr_load_u128) {
-				printf("C0_INSTRUCTION %s _C0_%s(void *ptr) {\n", rs, name);
-				printf("\treturn *(%s *)(ptr);\n", rs);
-				printf("}\n\n");
+				c0_printf(p, "C0_INSTRUCTION %s _C0_%s(void *ptr) {\n", rs, name);
+				c0_printf(p, "\treturn *(%s *)(ptr);\n", rs);
+				c0_printf(p, "}\n\n");
 			} else if (C0Instr_store_u8 <= kind && kind <= C0Instr_store_u128) {
-				printf("C0_INSTRUCTION void _C0_%s(void *dst, %s src) {\n", name, ts);
-				printf("\t*(%s *)(dst) = src;\n", ts);
-				printf("}\n\n");
+				c0_printf(p, "C0_INSTRUCTION void _C0_%s(void *dst, %s src) {\n", name, ts);
+				c0_printf(p, "\t*(%s *)(dst) = src;\n", ts);
+				c0_printf(p, "}\n\n");
 			} else if (C0Instr_clz_u8 <= kind && kind <= C0Instr_popcnt_u128) {
 				c0_errorf("TODO: generate %s", c0_instr_names[kind]);
 			} else if (C0Instr_abs_i8 <= kind && kind <= C0Instr_abs_i128) {
-				printf("C0_INSTRUCTION %s _C0_%s(%s a) {\n", rs, name, ts);
-				printf("\treturn (a < 0)  -a : a;\n");
-				printf("}\n\n");
+				c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a) {\n", rs, name, ts);
+				c0_printf(p, "\treturn (a < 0)  -a : a;\n");
+				c0_printf(p, "}\n\n");
 			} else if (C0Instr_add_u8 <= kind && kind <= C0Instr_add_u128) {
-				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
-				printf("\t%s x = (%s)a + (%s)b;\n", uts, uts, uts);
+				c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
+				c0_printf(p, "\t%s x = (%s)a + (%s)b;\n", uts, uts, uts);
 				char const *mask = masks[bytes];
 				if (mask) {
-					printf("\treturn (%s)(x & %s);\n", rs, mask);
+					c0_printf(p, "\treturn (%s)(x & %s);\n", rs, mask);
 				} else {
-					printf("\treturn (%s)(x);\n", rs);
+					c0_printf(p, "\treturn (%s)(x);\n", rs);
 				}
-				printf("}\n\n");
+				c0_printf(p, "}\n\n");
 			} else if (C0Instr_sub_u8 <= kind && kind <= C0Instr_sub_u128) {
-				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
-				printf("\t%s x = (%s)a - (%s)b;\n", uts, uts, uts);
+				c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
+				c0_printf(p, "\t%s x = (%s)a - (%s)b;\n", uts, uts, uts);
 				char const *mask = masks[bytes];
 				if (mask) {
-					printf("\treturn (%s)(x & %s);\n", rs, mask);
+					c0_printf(p, "\treturn (%s)(x & %s);\n", rs, mask);
 				} else {
-					printf("\treturn (%s)(x);\n", rs);
+					c0_printf(p, "\treturn (%s)(x);\n", rs);
 				}
-				printf("}\n\n");
+				c0_printf(p, "}\n\n");
 			} else if (C0Instr_mul_u8 <= kind && kind <= C0Instr_mul_u128) {
-				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
-				printf("\t%s x = (%s)a * (%s)b;\n", uts, uts, uts);
+				c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
+				c0_printf(p, "\t%s x = (%s)a * (%s)b;\n", uts, uts, uts);
 				char const *mask = masks[bytes];
 				if (mask) {
-					printf("\treturn (%s)(x & %s);\n", rs, mask);
+					c0_printf(p, "\treturn (%s)(x & %s);\n", rs, mask);
 				} else {
-					printf("\treturn (%s)(x);\n", rs);
+					c0_printf(p, "\treturn (%s)(x);\n", rs);
 				}
-				printf("}\n\n");
+				c0_printf(p, "}\n\n");
 			} else if (C0Instr_quo_i8 <= kind && kind <= C0Instr_quo_u128) {
-				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s volatile b) {\n", rs, name, ts, ts);
+				c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a, %s volatile b) {\n", rs, name, ts, ts);
 				if (c0_basic_is_signed[type]) {
-					printf("\ni64 x = (i64)a / (i64)b;\n");
+					c0_printf(p, "\ni64 x = (i64)a / (i64)b;\n");
 				} else {
-					printf("\nu64 x = (u64)a / (u64)b;\n");
+					c0_printf(p, "\nu64 x = (u64)a / (u64)b;\n");
 				}
 				char const *mask = masks[bytes];
 				if (mask) {
-					printf("\treturn (%s)(x & %s);\n", rs, mask);
+					c0_printf(p, "\treturn (%s)(x & %s);\n", rs, mask);
 				} else {
-					printf("\treturn (%s)(x);\n", rs);
+					c0_printf(p, "\treturn (%s)(x);\n", rs);
 				}
-				printf("}\n\n");
+				c0_printf(p, "}\n\n");
 			} else if (C0Instr_rem_i8 <= kind && kind <= C0Instr_rem_u128) {
-				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s volatile b) {\n", rs, name, ts, ts);
+				c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a, %s volatile b) {\n", rs, name, ts, ts);
 				if (c0_basic_is_signed[type]) {
-					printf("\ni64 x = (i64)a %% (i64)b;\n");
+					c0_printf(p, "\ni64 x = (i64)a %% (i64)b;\n");
 				} else {
-					printf("\nu64 x = (u64)a %% (u64)b;\n");
+					c0_printf(p, "\nu64 x = (u64)a %% (u64)b;\n");
 				}
 				char const *mask = masks[bytes];
 				if (mask) {
-					printf("\treturn (%s)(x & %s);\n", rs, mask);
+					c0_printf(p, "\treturn (%s)(x & %s);\n", rs, mask);
 				} else {
-					printf("\treturn (%s)(x);\n", rs);
+					c0_printf(p, "\treturn (%s)(x);\n", rs);
 				}
-				printf("}\n\n");
+				c0_printf(p, "}\n\n");
 			} else if (C0Instr_shlc_i8 <= kind && kind <= C0Instr_shlc_u128) {
-				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
+				c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
 				if (c0_basic_is_signed[type]) {
-					printf("\ni64 x = (i64)a << (i64)((u32)b & %s);\n", shift_masks[bytes]);
+					c0_printf(p, "\ni64 x = (i64)a << (i64)((u32)b & %s);\n", shift_masks[bytes]);
 				} else {
-					printf("\nu64 x = (u64)a << ((u64)b & %s);\n", shift_masks[bytes]);
+					c0_printf(p, "\nu64 x = (u64)a << ((u64)b & %s);\n", shift_masks[bytes]);
 				}
 				char const *mask = masks[bytes];
 				if (mask) {
-					printf("\treturn (%s)(x & %s);\n", rs, mask);
+					c0_printf(p, "\treturn (%s)(x & %s);\n", rs, mask);
 				} else {
-					printf("\treturn (%s)(x);\n", rs);
+					c0_printf(p, "\treturn (%s)(x);\n", rs);
 				}
-				printf("}\n\n");
+				c0_printf(p, "}\n\n");
 			} else if (C0Instr_shlo_i8 <= kind && kind <= C0Instr_shlo_u128) {
-				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
-				printf("\ni64 x = b < %d ? ((i64)a << (i64)((u32)b & %s)) : 0;\n", bits, shift_masks[bytes]);
+				c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
+				c0_printf(p, "\ni64 x = b < %d ? ((i64)a << (i64)((u32)b & %s)) : 0;\n", bits, shift_masks[bytes]);
 				char const *mask = masks[bytes];
 				if (mask) {
-					printf("\treturn (%s)(x & %s);\n", rs, mask);
+					c0_printf(p, "\treturn (%s)(x & %s);\n", rs, mask);
 				} else {
-					printf("\treturn (%s)(x);\n", rs);
+					c0_printf(p, "\treturn (%s)(x);\n", rs);
 				}
-				printf("}\n\n");
+				c0_printf(p, "}\n\n");
 			} else if (C0Instr_shrc_i8 <= kind && kind <= C0Instr_shrc_u128) {
-				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
+				c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
 				if (c0_basic_is_signed[type]) {
-					printf("\ni64 x = (i64)a >> (i64)((u64)b & %s);\n", shift_masks[bytes]);
+					c0_printf(p, "\ni64 x = (i64)a >> (i64)((u64)b & %s);\n", shift_masks[bytes]);
 				} else {
-					printf("\nu64 x = (u64)a >> ((u64)b & %s);\n", shift_masks[bytes]);
+					c0_printf(p, "\nu64 x = (u64)a >> ((u64)b & %s);\n", shift_masks[bytes]);
 				}
 				char const *mask = masks[bytes];
 				if (mask) {
-					printf("\treturn (%s)(x & %s);\n", rs, mask);
+					c0_printf(p, "\treturn (%s)(x & %s);\n", rs, mask);
 				} else {
-					printf("\treturn (%s)(x);\n", rs);
+					c0_printf(p, "\treturn (%s)(x);\n", rs);
 				}
-				printf("}\n\n");
+				c0_printf(p, "}\n\n");
 			} else if (C0Instr_shro_i8 <= kind && kind <= C0Instr_shro_u128) {
-				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
-				printf("\ni64 x = b < %d ? ((i64)a >> (i64)((u32)b & %s)) : 0;\n", bits, shift_masks[bytes]);
+				c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
+				c0_printf(p, "\ni64 x = b < %d ? ((i64)a >> (i64)((u32)b & %s)) : 0;\n", bits, shift_masks[bytes]);
 				char const *mask = masks[bytes];
 				if (mask) {
-					printf("\treturn (%s)(x & %s);\n", rs, mask);
+					c0_printf(p, "\treturn (%s)(x & %s);\n", rs, mask);
 				} else {
-					printf("\treturn (%s)(x);\n", rs);
+					c0_printf(p, "\treturn (%s)(x);\n", rs);
 				}
-				printf("}\n\n");
+				c0_printf(p, "}\n\n");
 			} else if (c0_instr_arg_count[kind] == 2 && *c0_instr_symbols[kind]) {
-				printf("C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
-				printf("\t return (%s)(a %s b);\n", rs, c0_instr_symbols[kind]);
-				printf("}\n\n");
+				c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
+				c0_printf(p, "\t return (%s)(a %s b);\n", rs, c0_instr_symbols[kind]);
+				c0_printf(p, "}\n\n");
 			} else {
 				c0_errorf("TODO: generate %s", c0_instr_names[kind]);
 			}
@@ -789,32 +803,32 @@ void c0_gen_instructions_print(C0Printer *p, C0Gen *gen) {
 				char const *name = c0_instr_names[C0Instr_convert];
 				char const *from_s = c0_basic_names[from];
 				char const *to_s   = c0_basic_names[to];
-				printf("C0_INSTRUCTION %s _C0_%s_%s_to_%s(%s a) {\n", to_s, name, from_s, to_s, from_s);
+				c0_printf(p, "C0_INSTRUCTION %s _C0_%s_%s_to_%s(%s a) {\n", to_s, name, from_s, to_s, from_s);
 				if (c0_basic_type_sizes[from] > c0_basic_type_sizes[to]) {
-					printf("\treturn (%s)(a & %s);\n", to_s, masks[c0_basic_type_sizes[to]]);
+					c0_printf(p, "\treturn (%s)(a & %s);\n", to_s, masks[c0_basic_type_sizes[to]]);
 				} else {
-					printf("\treturn (%s)a;\n", to_s);
+					c0_printf(p, "\treturn (%s)a;\n", to_s);
 				}
-				printf("}\n\n");
+				c0_printf(p, "}\n\n");
 			} else if (gen->reinterpret_to_generate[from][to]) {
 				char const *name = c0_instr_names[C0Instr_reinterpret];
 				char const *from_s = c0_basic_names[from];
 				char const *to_s   = c0_basic_names[to];
-				printf("C0_INSTRUCTION %s _C0_%s_%s_to_%s(%s a) {\n", to_s, name, from_s, to_s, from_s);
-				printf("\tunion {%s from; %s to} x;\n", from_s, to_s);
-				printf("\tx.from = a;\n");
-				printf("\treturn x.to;\n");
-				printf("}\n\n");
+				c0_printf(p, "C0_INSTRUCTION %s _C0_%s_%s_to_%s(%s a) {\n", to_s, name, from_s, to_s, from_s);
+				c0_printf(p, "\tunion {%s from; %s to} x;\n", from_s, to_s);
+				c0_printf(p, "\tx.from = a;\n");
+				c0_printf(p, "\treturn x.to;\n");
+				c0_printf(p, "}\n\n");
 			}
 		}
 	}
 }
 
-void c0_print_proc(C0Printer *printer, C0Proc *proc) {
-	C0Arena *a = &printer->arena;
-	printf("%s {\n", c0_type_to_cdecl_internal(a, proc->sig, c0_string_to_cstr(a, proc->name), true));
-	for (isize i = 0; i < c0array_len(proc->instrs); i++) {
-		c0_print_instr(printer, proc->instrs[i], 1, false);
+void c0_print_proc(C0Printer *p, C0Proc *procedure) {
+	C0Arena *a = &p->arena;
+	c0_printf(p, "%s {\n", c0_type_to_cdecl_internal(a, procedure->sig, c0_string_to_cstr(a, procedure->name), true));
+	for (isize i = 0; i < c0array_len(procedure->instrs); i++) {
+		c0_print_instr(p, procedure->instrs[i], 1, false);
 	}
-	printf("}\n\n");
+	c0_printf(p, "}\n\n");
 }
