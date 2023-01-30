@@ -354,7 +354,7 @@ struct C0Loc {
 
 typedef u32 C0InstrFlags;
 enum C0InstrFlags_enum {
-	C0InstrFlag_Print_Inline = 1u<<16u,
+	C0InstrFlag_print_inline = 1u<<16u,
 };
 
 struct C0Instr {

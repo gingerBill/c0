@@ -70,7 +70,7 @@ bool c0_print_instr_type(C0Printer *p, C0Instr *instr) {
 	return false;
 }
 void c0_print_instr_arg(C0Printer *p, C0Instr *instr, usize indent) {
-	if (instr->flags & C0InstrFlag_Print_Inline) {
+	if (instr->flags & C0InstrFlag_print_inline) {
 		c0_print_instr_expr(p, instr, indent);
 		return;
 	}
@@ -336,7 +336,7 @@ void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent) {
 	if (instr->args_len > 1) {
 		for (isize i = 0; i < instr->args_len; i++) {
 			C0Instr *arg = instr->args[i];
-			if (arg->flags & C0InstrFlag_Print_Inline) {
+			if (arg->flags & C0InstrFlag_print_inline) {
 				any_inline = true;
 			}
 			if (arg->kind != C0Instr_decl) {
@@ -374,7 +374,7 @@ void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent) {
 	c0_printf(p, ")");
 }
 
-bool c0_instr_can_be_printed_inline(C0Instr *instr) {
+bool c0_instr_can_be_printed_inline_as_condition(C0Instr *instr) {
 	if (instr->uses != 1) {
 		return false;
 	}
@@ -384,8 +384,46 @@ bool c0_instr_can_be_printed_inline(C0Instr *instr) {
 	if (instr->alignment != 0) {
 		return false;
 	}
+	if (instr->agg_type == NULL && instr->basic_type == C0Basic_void) {
+		return false;
+	}
+	return true;
+}
+bool c0_instr_can_be_printed_inline(C0Instr *instr) {
+	if (!c0_instr_can_be_printed_inline_as_condition(instr)) {
+		return false;
+	}
+	switch (instr->kind) {
+	case C0Instr_decl:
+		return true;
+	case C0Instr_call:
+		return false;
+	case C0Instr_convert:
+	case C0Instr_reinterpret:
+		return true;
+	}
 
-	return instr->agg_type != NULL || instr->basic_type != C0Basic_void;
+	if (C0Instr_clz_u8 <= instr->kind && instr->kind <= C0Instr_gteqf_f64) {
+		return true;
+	}
+
+	if (C0Instr_select_u8 <= instr->kind && instr->kind <= C0Instr_select_ptr) {
+		return true;
+	}
+	return false;
+}
+bool c0_instr_print_inline_as_condition(C0Printer *p, C0Instr *instr) {
+	if (p->flags & C0PrinterFlag_UseInlineArgs) {
+		if (instr->flags & C0InstrFlag_print_inline) {
+			// don't bother checking again
+			return true;
+		}
+		if (c0_instr_can_be_printed_inline_as_condition(instr)) {
+			instr->flags |= C0InstrFlag_print_inline;
+			return true;
+		}
+	}
+	return false;
 }
 
 
@@ -393,7 +431,7 @@ void c0_print_instr(C0Printer *p, C0Instr *instr, usize indent, bool ignore_firs
 	C0_ASSERT(instr != NULL);
 
 	if ((p->flags & C0PrinterFlag_UseInlineArgs) && c0_instr_can_be_printed_inline(instr)) {
-		instr->flags |= C0InstrFlag_Print_Inline;
+		instr->flags |= C0InstrFlag_print_inline;
 		return;
 	}
 
@@ -417,7 +455,9 @@ void c0_print_instr(C0Printer *p, C0Instr *instr, usize indent, bool ignore_firs
 		if (instr->args_len != 0) {
 			C0_ASSERT(instr->args_len == 1);
 			c0_printf(p, " ");
-			c0_print_instr_arg(p, instr->args[0], indent);
+			C0Instr *arg = instr->args[0];
+			c0_instr_print_inline_as_condition(p, arg);
+			c0_print_instr_arg(p, arg, indent);
 		}
 		c0_printf(p, ";\n");
 		return;
@@ -433,6 +473,7 @@ void c0_print_instr(C0Printer *p, C0Instr *instr, usize indent, bool ignore_firs
 	case C0Instr_if:
 		C0_ASSERT(instr->args_len >= 1);
 		c0_printf(p, "if (");
+		c0_instr_print_inline_as_condition(p, instr->args[0]);
 		c0_print_instr_arg(p, instr->args[0], indent);
 		c0_printf(p, ") {\n");
 		for (isize i = 0; i < c0array_len(instr->nested_instrs); i++) {
