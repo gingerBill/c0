@@ -65,10 +65,14 @@ C0Proc *test_fibonacci(C0Gen *gen) {
 int main(void) {
 	c0_context = C0_DEFAULT_CONTEXT;
 
+	// Create an arena allocator
 	const C0Allocator arena = c0_arena_create(&C0_STDLIB_ALLOCATOR);
 
+	// Set the current context's allocator to the arena. The arena will now
+	// be used for all subsequent allocations within C0.
 	c0_context.allocator = &arena;
 
+	// Generate some procedures.
 	C0Gen gen = {0};
 	c0_gen_init(&gen);
 
@@ -81,6 +85,7 @@ int main(void) {
 	c0_gen_instructions_print(&printer, &gen);
 	c0_print_proc(&printer, factorial);
 	c0_print_proc(&printer, fibonacci);
+
 
 	c0_deallocate_all();
 
