@@ -1,5 +1,6 @@
 #ifndef C0_CONTEXT_H
 #define C0_CONTEXT_H
+
 #include "c0_types.h"
 
 typedef struct C0Allocator C0Allocator;

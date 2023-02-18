@@ -583,7 +583,6 @@ C0_PUSH_UN_UINT_DEF(popcnt);
 }
 
 C0_PUSH_UN_FLOAT_DEF(absf);
-C0_PUSH_UN_FLOAT_DEF(negf);
 C0_PUSH_UN_FLOAT_DEF(ceilf);
 C0_PUSH_UN_FLOAT_DEF(floorf);
 C0_PUSH_UN_FLOAT_DEF(nearestf);
@@ -1015,9 +1014,7 @@ C0Instr *c0_push_atomic_bin(C0Proc *p, C0InstrKind kind, C0Instr *dst, C0Instr *
 
 C0_PUSH_BIN_UINT_DEF(atomic_xchg);
 C0_PUSH_BIN_UINT_DEF(atomic_add);
-C0_PUSH_BIN_FLOAT_DEF(atomic_addf);
 C0_PUSH_BIN_UINT_DEF(atomic_sub);
-C0_PUSH_BIN_FLOAT_DEF(atomic_subf);
 C0_PUSH_BIN_UINT_DEF(atomic_and);
 C0_PUSH_BIN_UINT_DEF(atomic_or);
 C0_PUSH_BIN_UINT_DEF(atomic_xor);

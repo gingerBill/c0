@@ -86,7 +86,6 @@ int main(void) {
 	c0_print_proc(&printer, factorial);
 	c0_print_proc(&printer, fibonacci);
 
-
 	c0_deallocate_all();
 
 	c0_arena_destroy(&arena);

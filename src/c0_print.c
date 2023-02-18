@@ -648,7 +648,6 @@ void c0_gen_instructions_print(C0Printer *p, C0Gen *gen) {
 				case C0Instr_popcnt_u128:
 					c0_error("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
 					break;
-				case C0Instr_abs_i128:
 				case C0Instr_add_u128:
 				case C0Instr_sub_u128:
 				case C0Instr_mul_u128:
@@ -696,12 +695,6 @@ void c0_gen_instructions_print(C0Printer *p, C0Gen *gen) {
 				case C0Instr_gteq_u128:
 					c0_error("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
 					break;
-				case C0Instr_min_i128:
-				case C0Instr_min_u128:
-				case C0Instr_max_i128:
-				case C0Instr_max_u128:
-					c0_error("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
-					break;
 				default:
 					c0_error("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
 					break;
@@ -728,10 +721,6 @@ void c0_gen_instructions_print(C0Printer *p, C0Gen *gen) {
 				c0_printf(p, "}\n\n");
 			} else if (C0Instr_clz_u8 <= kind && kind <= C0Instr_popcnt_u128) {
 				c0_error("TODO: generate %s", c0_instr_names[kind]);
-			} else if (C0Instr_abs_i8 <= kind && kind <= C0Instr_abs_i128) {
-				c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a) {\n", rs, name, ts);
-				c0_printf(p, "\treturn (a < 0)  -a : a;\n");
-				c0_printf(p, "}\n\n");
 			} else if (C0Instr_add_u8 <= kind && kind <= C0Instr_add_u128) {
 				c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a, %s b) {\n", rs, name, ts, ts);
 				c0_printf(p, "\t%s x = (%s)a + (%s)b;\n", uts, uts, uts);
