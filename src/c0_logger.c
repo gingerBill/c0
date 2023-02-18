@@ -5,19 +5,15 @@
 #include "c0_context.h"
 
 static void callback(void *user, const C0SourceLocation *location, int level, char const *fmt, va_list va) {
+	(void)user;
+	(void)location;
 	switch (level) {
 	case C0_LOG_INFO:
-		fputs("INFO: ", stdout);
+	case C0_LOG_WARNING:
 		vfprintf(stdout, fmt, va);
 		fputs("\n", stdout);
 		break;
-	case C0_LOG_WARNING:
-		fputs("WARNING: ", stderr);
-		vfprintf(stderr, fmt, va);
-		fputs("\n", stderr);
-		break;
 	case C0_LOG_ERROR:
-		fputs("ERROR: ", stderr);
 		vfprintf(stderr, fmt, va);
 		fputs("\n", stderr);
 		break;

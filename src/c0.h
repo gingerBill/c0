@@ -5,11 +5,6 @@
 #include "c0_string.h"
 #include "c0_assert.h"
 
-// #include "c0_types.h"
-// #include "c0_string.h"
-// #include "c0_array.h"
-// #include "c0_context.h"
-
 typedef struct C0Gen C0Gen;
 typedef struct C0Instr C0Instr;
 typedef struct C0Proc C0Proc;
@@ -57,45 +52,6 @@ static bool const c0_basic_is_signed[C0Basic_COUNT] = {
 	C0_BASIC_TABLE
 #undef C0_BASIC
 };
-
-static C0BasicType c0_basic_unsigned_type[C0Basic_COUNT] = {
-	C0Basic_void,
-	C0Basic_u8,
-	C0Basic_u8,
-	C0Basic_u16,
-	C0Basic_u16,
-	C0Basic_u32,
-	C0Basic_u32,
-	C0Basic_u64,
-	C0Basic_u64,
-	C0Basic_u128,
-	C0Basic_u128,
-	C0Basic_f16,
-	C0Basic_f32,
-	C0Basic_f64,
-	C0Basic_ptr,
-};
-
-static u8 c0_basic_unsigned_instr_offset[C0Basic_COUNT] = {
-	0,
-	0,
-	0,
-	1,
-	1,
-	2,
-	2,
-	3,
-	3,
-	4,
-	4,
-	5,
-	6,
-	7,
-	8,
-};
-
-
-
 
 typedef u16 C0InstrKind;
 enum C0InstrKind_enum {
@@ -301,7 +257,6 @@ struct C0AggType {
 };
 
 void c0_gen_init(C0Gen *gen);
-void c0_gen_destroy(C0Gen *gen);
 
 C0Proc *c0_proc_create(C0Gen *gen, C0String name, C0AggType *sig);
 C0Proc *c0_proc_finish(C0Proc *p);

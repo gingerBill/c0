@@ -4,6 +4,42 @@
 #include "c0_logger.h"
 #include "c0_allocator.h"
 
+static C0BasicType c0_basic_unsigned_type[C0Basic_COUNT] = {
+	C0Basic_void,
+	C0Basic_u8,
+	C0Basic_u8,
+	C0Basic_u16,
+	C0Basic_u16,
+	C0Basic_u32,
+	C0Basic_u32,
+	C0Basic_u64,
+	C0Basic_u64,
+	C0Basic_u128,
+	C0Basic_u128,
+	C0Basic_f16,
+	C0Basic_f32,
+	C0Basic_f64,
+	C0Basic_ptr,
+};
+
+static u8 c0_basic_unsigned_instr_offset[C0Basic_COUNT] = {
+	0,
+	0,
+	0,
+	1,
+	1,
+	2,
+	2,
+	3,
+	3,
+	4,
+	4,
+	5,
+	6,
+	7,
+	8,
+};
+
 char *c0_type_to_cdecl(C0AggType *type, char const *str);
 
 i64 c0_basic_type_size(C0Gen *gen, C0BasicType type) {
@@ -26,11 +62,6 @@ void c0_gen_init(C0Gen *gen) {
 		t->align = t->size;
 		gen->basic_agg[kind] = t;
 	}
-}
-
-void c0_gen_destroy(C0Gen *gen) {
-	(void)gen;
-	// Does nothing.
 }
 
 bool c0_basic_type_is_integer(C0BasicType type) {

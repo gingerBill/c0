@@ -5,6 +5,24 @@
 #include "c0_logger.h"
 #include "c0_allocator.h"
 
+static C0BasicType c0_basic_unsigned_type[C0Basic_COUNT] = {
+	C0Basic_void,
+	C0Basic_u8,
+	C0Basic_u8,
+	C0Basic_u16,
+	C0Basic_u16,
+	C0Basic_u32,
+	C0Basic_u32,
+	C0Basic_u64,
+	C0Basic_u64,
+	C0Basic_u128,
+	C0Basic_u128,
+	C0Basic_f16,
+	C0Basic_f32,
+	C0Basic_f64,
+	C0Basic_ptr,
+};
+
 void c0_printf(C0Printer *p, char const *fmt, ...) {
 	va_list va;
 	va_start(va, fmt);

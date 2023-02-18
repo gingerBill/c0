@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 #include "c0.h"
 #include "c0_print.h"
 #include "c0_allocator.h"
@@ -60,12 +62,7 @@ C0Proc *test_fibonacci(C0Gen *gen) {
 	return c0_proc_finish(p);
 }
 
-#include <stdio.h>
-
-int main(int argc, char const **argv) {
-	setvbuf(stdout, NULL, _IONBF, 0);
-	setvbuf(stderr, NULL, _IONBF, 0);
-
+int main(void) {
 	c0_context = C0_DEFAULT_CONTEXT;
 
 	const C0Allocator arena = c0_arena_create(&C0_STDLIB_ALLOCATOR);
@@ -85,16 +82,9 @@ int main(int argc, char const **argv) {
 	c0_print_proc(&printer, factorial);
 	c0_print_proc(&printer, fibonacci);
 
-	// arena_free_all(&printer.arena);
-
 	c0_deallocate_all();
 
 	c0_arena_destroy(&arena);
-
-	fflush(stderr);
-	fflush(stdout);
-
-	c0_gen_destroy(&gen);
 
 	return 0;
 }
