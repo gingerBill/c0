@@ -6,9 +6,6 @@
 #include "c0_config.h"
 #include "c0_allocator.h"
 
-#define valloc malloc
-#define vdealloc free
-
 static void* allocate_stdlib(void *user, usize bytes) {
 	(void)user;
 	return malloc(bytes);
@@ -26,7 +23,7 @@ static void deallocate_stdlib(void *user, void *data) {
 
 static void deallocate_all_stdlib(void *user) {
 	(void)user;
-	// Do nothing.
+	// Does nothing.
 }
 
 const C0Allocator C0_STDLIB_ALLOCATOR = {
@@ -82,12 +79,12 @@ static void *arena_allocate(Arena *arena, usize min_size, usize alignment) {
 			block_size = MINIMUM_BLOCK_SIZE;
 		}
 
-		Block *new_block = valloc(block_size);
+		Block *new_block = arena->base->allocate(arena->base->user, block_size);
 		if (!new_block) {
 			return 0;
 		}
 		new_block->used = 0;
-		new_block->size = 0;
+		new_block->size = block_size;
 		new_block->base = (u8 *)new_block + sizeof(Block);
 		new_block->prev = arena->block;
 		arena->block = new_block;
@@ -111,7 +108,7 @@ static void arena_deallocate_all(Arena *arena) {
 	while (arena->block != NULL) {
 		Block *block = arena->block;
 		arena->block = block->prev;
-		vdealloc(block);
+		arena->base->deallocate(arena->base->user, block);
 	}
 }
 
@@ -129,6 +126,8 @@ static void *reallocate_arena(void *user, void *data, usize bytes) {
 }
 
 static void deallocate_arena(void *user, void *data) {
+	(void)user;
+	(void)data;
 	// Do nothing.
 }
 

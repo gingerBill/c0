@@ -12,18 +12,22 @@
 typedef struct C0Logger C0Logger;
 typedef struct C0SourceLocation C0SourceLocation;
 
-struct C0SourceLocation {
-	const char *file;
-	int line;
-};
-
-#define C0_SOURCE_LOCATION \
-	C0_LIT(const C0SourceLocation, __FILE__, __LINE__)
-
 struct C0Logger {
-	void (*log)(const C0SourceLocation *location, int level, const char *fmt, va_list va);
+	void *user;
+	void (*callback)(void *user, const C0SourceLocation *location, int level, const char *fmt, va_list va);
 };
 
-extern const C0Logger C0_STDLIB_LOGGER;
+void c0_log(const C0SourceLocation *location, int level, const char *fmt, ...);
+
+#define c0_info(...) \
+	c0_log(&C0_SOURCE_LOCATION, C0_LOG_INFO, __VA_ARGS__)
+
+#define c0_warning(...) \
+	c0_log(&C0_SOURCE_LOCATION, C0_LOG_WARNING, __VA_ARGS__)
+
+#define c0_error(...) \
+	c0_log(&C0_SOURCE_LOCATION, C0_LOG_ERROR, __VA_ARGS__)
+
+extern const C0Logger C0_STDIO_LOGGER;
 
 #endif // C0_LOGGER_H

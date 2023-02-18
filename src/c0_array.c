@@ -1,5 +1,5 @@
 #include "c0_array.h"
-#include "c0_context.h"
+#include "c0_allocator.h"
 
 bool c0_array_grow_(void **const array, usize elements, usize type_size) {
 	usize count = 0;

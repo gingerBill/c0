@@ -1,27 +1,15 @@
-
-#include <stdio.h> // fprintf
 #include <string.h> // memset
 
 #include "c0_context.h"
 
+#include "c0_allocator.h" // C0_STDLIB_ALLOCATOR
+#include "c0_logger.h" // C0_STDIO_LOGGER
+
 _Thread_local C0Context c0_context;
 
-static void assert_cb(char const *file, char const *function, int line, char const *condition, char const *fmt, va_list va) {
-#if defined(_MSC_VER)
-	fprintf(stderr, "%s(%d): %s: %s", file, line, function, condition);
-#else
-	fprintf(stderr, "%s:%d: %s: %s", file, line, function, condition);
-#endif
-	if (fmt) {
-		vfprintf(stderr, fmt, va);
-	}
-	fprintf(stderr, "\n");
-}
-
 const C0Context C0_DEFAULT_CONTEXT = {
-	assert_cb,
 	&C0_STDLIB_ALLOCATOR,
-	&C0_STDLIB_LOGGER,
+	&C0_STDIO_LOGGER,
 };
 
 void *c0_allocate_uninitialized(usize bytes) {

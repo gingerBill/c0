@@ -1,9 +1,9 @@
 #include <stdio.h>
-#include <stdlib.h> // hack for now
 
-#include "c0_array.h"
-#include "c0_print.h"
 #include "c0.h"
+#include "c0_print.h"
+#include "c0_logger.h"
+#include "c0_allocator.h"
 
 void c0_printf(C0Printer *p, char const *fmt, ...) {
 	va_list va;
@@ -34,14 +34,13 @@ void c0_print_agg_type(C0Printer *p, C0AggType *type, C0String name) {
 		c0_printf(p, " (%.*s)[%lld]", C0PSTR(name), (long long)type->array.len);
 		break;
 	case C0AggType_record:
-		c0_errorf("TODO record printing");
+		c0_error("TODO record printing");
 		break;
 	case C0AggType_proc:
-		c0_errorf("TODO proc printing");
+		c0_error("TODO proc printing");
 		break;
 	}
 }
-
 
 bool c0_print_instr_type(C0Printer *p, C0Instr *instr) {
 	if (instr->agg_type) {
@@ -213,7 +212,7 @@ void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent) {
 	C0_ASSERT(instr->agg_type != NULL || instr->basic_type != C0Basic_void);
 	switch (instr->kind) {
 	case C0Instr_invalid:
-		c0_errorf("unhandled instruction kind");
+		c0_error("unhandled instruction kind");
 		break;
 
 	case C0Instr_decl:
@@ -232,7 +231,7 @@ void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent) {
 			break;
 		case C0Basic_i128:
 		case C0Basic_u128:
-			c0_errorf("todo 128 bit integers");
+			c0_error("todo 128 bit integers");
 			break;
 		case C0Basic_f16:
 			c0_printf(p, "%u", instr->value_f16);
@@ -629,7 +628,7 @@ void c0_gen_instructions_print(C0Printer *p, C0Gen *gen) {
 				case C0Instr_clz_u128:
 				case C0Instr_ctz_u128:
 				case C0Instr_popcnt_u128:
-					c0_errorf("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
+					c0_error("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
 					break;
 				case C0Instr_abs_i128:
 				case C0Instr_add_u128:
@@ -647,7 +646,7 @@ void c0_gen_instructions_print(C0Printer *p, C0Gen *gen) {
 				case C0Instr_shlo_u128:
 				case C0Instr_shro_i128:
 				case C0Instr_shro_u128:
-					c0_errorf("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
+					c0_error("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
 					break;
 				case C0Instr_and_u128:
 				case C0Instr_or_u128:
@@ -677,16 +676,16 @@ void c0_gen_instructions_print(C0Printer *p, C0Gen *gen) {
 				case C0Instr_lteq_u128:
 				case C0Instr_gteq_i128:
 				case C0Instr_gteq_u128:
-					c0_errorf("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
+					c0_error("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
 					break;
 				case C0Instr_min_i128:
 				case C0Instr_min_u128:
 				case C0Instr_max_i128:
 				case C0Instr_max_u128:
-					c0_errorf("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
+					c0_error("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
 					break;
 				default:
-					c0_errorf("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
+					c0_error("TODO: support 128-bit integers - generate %s", c0_instr_names[kind]);
 					break;
 				}
 
@@ -710,7 +709,7 @@ void c0_gen_instructions_print(C0Printer *p, C0Gen *gen) {
 				c0_printf(p, "\t*(%s *)(dst) = src;\n", ts);
 				c0_printf(p, "}\n\n");
 			} else if (C0Instr_clz_u8 <= kind && kind <= C0Instr_popcnt_u128) {
-				c0_errorf("TODO: generate %s", c0_instr_names[kind]);
+				c0_error("TODO: generate %s", c0_instr_names[kind]);
 			} else if (C0Instr_abs_i8 <= kind && kind <= C0Instr_abs_i128) {
 				c0_printf(p, "C0_INSTRUCTION %s _C0_%s(%s a) {\n", rs, name, ts);
 				c0_printf(p, "\treturn (a < 0)  -a : a;\n");
@@ -826,7 +825,7 @@ void c0_gen_instructions_print(C0Printer *p, C0Gen *gen) {
 				c0_printf(p, "\t return (%s)(a %s b);\n", rs, c0_instr_symbols[kind]);
 				c0_printf(p, "}\n\n");
 			} else {
-				c0_errorf("TODO: generate %s", c0_instr_names[kind]);
+				c0_error("TODO: generate %s", c0_instr_names[kind]);
 			}
 		}
 	}

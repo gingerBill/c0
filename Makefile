@@ -36,9 +36,6 @@ DEPS := $(filter %.d,$(SRCS:%.c=$(DEPDIR)/%.d))
 
 CFLAGS := -Wall
 CFLAGS += -Wextra
-CFLAGS += -Wno-unused-function  # TODO(dweiler): Remove
-CFLAGS += -Wno-unused-parameter # TODO(dweiler): Remove
-CFLAGS += -Wno-unused-variable  # TODO(dweiler): Remove
 CFLAGS += -std=c11
 
 ifeq ($(DEBUG),1)

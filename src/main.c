@@ -1,5 +1,7 @@
 #include "c0.h"
 #include "c0_print.h"
+#include "c0_allocator.h"
+#include "c0_context.h"
 
 C0Proc *test_factorial(C0Gen *gen) {
 	C0AggType *agg_u32 = c0_agg_type_basic(gen, C0Basic_u32);

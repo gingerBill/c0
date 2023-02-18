@@ -29,4 +29,15 @@ typedef unsigned long u64;
 typedef signed long i64;
 #endif
 
+typedef struct C0SourceLocation C0SourceLocation;
+
+struct C0SourceLocation {
+	const char *file;
+	const char *function;
+	int line;
+};
+
+#define C0_SOURCE_LOCATION \
+	C0_LIT(const C0SourceLocation, __FILE__, __func__, __LINE__)
+
 #endif // C0_TYPES_H

@@ -1,30 +1,14 @@
 #ifndef C0_H
 #define C0_H
 
-#include "c0_types.h"
-#include "c0_string.h"
 #include "c0_array.h"
-#include "c0_context.h"
+#include "c0_string.h"
+#include "c0_assert.h"
 
-#ifndef C0_DEBUG_TRAP
-	#if defined(_MSC_VER)
-	 	#if _MSC_VER < 1300
-		#define C0_DEBUG_TRAP() __asm int 3 /* Trap to debugger! */
-		#else
-		#define C0_DEBUG_TRAP() __debugbreak()
-		#endif
-	#else
-		#define C0_DEBUG_TRAP() __builtin_trap()
-	#endif
-#endif
-
-#ifndef C0_ASSERT_MSG
-#define C0_ASSERT_MSG(...)
-#endif
-
-#ifndef C0_ASSERT
-#define C0_ASSERT(cond) C0_ASSERT_MSG(cond, NULL)
-#endif
+// #include "c0_types.h"
+// #include "c0_string.h"
+// #include "c0_array.h"
+// #include "c0_context.h"
 
 typedef struct C0Gen C0Gen;
 typedef struct C0Instr C0Instr;
@@ -329,7 +313,7 @@ C0Instr *c0_push_if(C0Proc *p, C0Instr *cond);
 C0Instr *c0_pop_if(C0Proc *p);
 
 C0AggType *c0_agg_type_basic(C0Gen *gen, C0BasicType type);
-C0AggType *c0_agg_type_array(C0Gen *gen, C0AggType *elem, i64 len);
+C0AggType *c0_agg_type_array(C0Gen *gen, C0AggType *elem, usize len);
 C0AggType *c0_agg_type_proc(C0Gen *gen, C0AggType *ret, C0Array(C0String) names, C0Array(C0AggType *) types, C0ProcFlags flags);
 
 #define C0_PUSH_BIN_INT_DEF(name) C0Instr *c0_push_##name(C0Proc *p, C0Instr *left, C0Instr *right);
