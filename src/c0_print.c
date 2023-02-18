@@ -1,16 +1,9 @@
-typedef u32 C0PrinterFlags;
-enum C0PrinterFlag_enum {
-	C0PrinterFlag_UseInlineArgs = 1u<<0u,
-};
+#include <stdio.h>
+#include <stdlib.h> // hack for now
 
-typedef struct C0Printer C0Printer;
-struct C0Printer {
-	C0PrinterFlags flags;
-	C0Arena arena;
-
-	void (*custom_vprintf)(C0Printer *p, char const *fmt, va_list va);
-	void *user_data;
-};
+#include "c0_array.h"
+#include "c0_print.h"
+#include "c0.h"
 
 void c0_printf(C0Printer *p, char const *fmt, ...) {
 	va_list va;
@@ -22,7 +15,6 @@ void c0_printf(C0Printer *p, char const *fmt, ...) {
 	}
 	va_end(va);
 }
-
 
 void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent);
 
@@ -37,9 +29,8 @@ void c0_print_agg_type(C0Printer *p, C0AggType *type, C0String name) {
 	case C0AggType_basic:
 		c0_printf(p, "%s", c0_basic_names[type->basic.type]);
 		break;
-
 	case C0AggType_array:
-		c0_print_agg_type(p, type->array.elem, {0});
+		c0_print_agg_type(p, type->array.elem, C0_LIT(C0String));
 		c0_printf(p, " (%.*s)[%lld]", C0PSTR(name), (long long)type->array.len);
 		break;
 	case C0AggType_record:
@@ -81,67 +72,75 @@ void c0_print_instr_arg(C0Printer *p, C0Instr *instr, usize indent) {
 	}
 }
 
-static char *strf_alloc(C0Arena *a, usize n) {
-	return (char *)c0_arena_alloc(a, n, 1);
+static char *strf_alloc(usize n) {
+	return c0_allocate_uninitialized(n);
 }
 
-static char *strf(C0Arena *a, char const *fmt, ...) {
+static char *strf(char const *fmt, ...) {
 	char *str = NULL;
 	va_list va;
 	va_start(va, fmt);
-	usize n = 1 + vsnprintf(NULL, 0, fmt, va);
+	const usize n = 1 + vsnprintf(NULL, 0, fmt, va);
 	va_end(va);
+
 	if (n) {
-		str = strf_alloc(a, n);
+		str = strf_alloc(n);
 		va_start(va, fmt);
 		vsnprintf(str, n, fmt, va);
 		va_end(va);
 	}
 	return str;
 }
-static char const *c0_cdecl_paren(C0Arena *a, char const *str, char c) {
-	return c && c != '[' ? strf(a, "(%s)", str) : str;
+
+static char const *c0_cdecl_paren(char const *str, char c) {
+	return c && c != '[' ? strf("(%s)", str) : str;
 }
-static char const *c0_string_to_cstr(C0Arena *a, C0String str) {
-	char *c = strf_alloc(a, str.len+1);
+
+static char const *c0_string_to_cstr(C0String str) {
+	char *c = strf_alloc(str.len + 1);
 	memmove(c, str.text, str.len);
+	c[str.len] = '\0';
 	return c;
 }
 
 char *str_buf_printf(C0Array(char) *array, char const *fmt, ...) {
 	va_list va;
 	va_start(va, fmt);
-	usize n = 1 + vsnprintf(NULL, 0, fmt, va);
+	const usize n = 1 + vsnprintf(NULL, 0, fmt, va);
 	va_end(va);
-	isize old_len = c0array_len(*array);
-	isize new_len = old_len + n;
-	c0array_resize(*array, new_len);
+
+	const usize old_len = c0_array_len(*array);
+	const usize new_len = old_len + n;
+	c0_array_resize(*array, new_len);
 
 	va_start(va, fmt);
 	vsnprintf(&(*array)[old_len], n, fmt, va);
 	va_end(va);
-	c0array_meta(*array)->len -= 1; // ignore NUL
+	c0_array_meta(*array)->len -= 1; // ignore NUL
+
 	return *array;
 }
 
-static char *c0_type_to_cdecl_internal(C0Arena *a, C0AggType *type, char const *str, bool ignore_proc_ptr);
-static char *c0_type_to_cdecl(C0Arena *a, C0AggType *type, char const *str) {
-	return c0_type_to_cdecl_internal(a, type, str, false);
+static char *c0_type_to_cdecl_internal(C0AggType *type, char const *str, bool ignore_proc_ptr);
+
+char *c0_type_to_cdecl(C0AggType *type, char const *str) {
+	return c0_type_to_cdecl_internal(type, str, false);
 }
-static char *c0_type_to_cdecl_internal(C0Arena *a, C0AggType *type, char const *str, bool ignore_proc_ptr) {
+
+static char *c0_type_to_cdecl_internal(C0AggType *type, char const *str, bool ignore_proc_ptr) {
 	switch (type->kind) {
 	case C0AggType_basic:
 		if (type->basic.type == C0Basic_ptr) {
-			return strf(a, "void %s", c0_cdecl_paren(a, strf(a, "*%s", str), *str));
+			return strf("void %s", c0_cdecl_paren(strf("*%s", str), *str));
 		} else {
 			char const *s = c0_basic_names[type->basic.type];
-			return strf(a, "%s%s%s", s, *str ? " " : "", str);
+			return strf("%s%s%s", s, *str ? " " : "", str);
 		}
 	case C0AggType_array:
-		return c0_type_to_cdecl(a, type->array.elem, c0_cdecl_paren(a, strf(a, "%s[%llu]", str, (unsigned long long)type->array.len), *str));
+		return c0_type_to_cdecl(type->array.elem, c0_cdecl_paren(strf("%s[%llu]", str, (unsigned long long)type->array.len), *str));
 	case C0AggType_record:
 		C0_ASSERT(type->record.name.len != 0);
-		return strf(a, "%.*s", C0PSTR(type->record.name));
+		return strf("%.*s", C0PSTR(type->record.name));
 	case C0AggType_proc:
 		{
 			C0Array(char) buf = NULL;
@@ -150,11 +149,11 @@ static char *c0_type_to_cdecl_internal(C0Arena *a, C0AggType *type, char const *
 			} else {
 				str_buf_printf(&buf, "(*%s)(", str);
 			}
-			usize n = c0array_len(type->proc.types);
+			const usize n = c0_array_len(type->proc.types);
 			if (n == 0)  {
 				str_buf_printf(&buf, "void)");
 			} else {
-				usize name_len = c0array_len(type->proc.names);
+				const usize name_len = c0_array_len(type->proc.names);
 				for (usize i = 0; i < n; i++) {
 					C0AggType *pt = type->proc.types[i];
 					if (i != 0) {
@@ -163,23 +162,22 @@ static char *c0_type_to_cdecl_internal(C0Arena *a, C0AggType *type, char const *
 					if (ignore_proc_ptr && name_len == n) {
 						C0String name = type->proc.names[i];
 						if (name.len != 0) {
-							str_buf_printf(&buf, "%s", c0_type_to_cdecl(a, pt, c0_string_to_cstr(a, name)));
+							str_buf_printf(&buf, "%s", c0_type_to_cdecl(pt, c0_string_to_cstr(name)));
 							continue;
 						}
 					}
-					str_buf_printf(&buf, "%s", c0_type_to_cdecl(a, pt, ""));
+					str_buf_printf(&buf, "%s", c0_type_to_cdecl(pt, ""));
 				}
 				if (type->proc.flags & C0ProcFlag_variadic) {
 					str_buf_printf(&buf, ", ...");
 				}
 				str_buf_printf(&buf, ")");
 			}
-			char *result = c0_type_to_cdecl(a, type->proc.ret, buf);
-			c0array_delete(buf);
+			char *result = c0_type_to_cdecl(type->proc.ret, buf);
+			c0_array_delete(buf);
 			return result;
 		}
 	}
-	C0_PANIC("invalid type");
 	return NULL;
 }
 
@@ -196,11 +194,11 @@ static void c0_print_instr_creation(C0Printer *p, C0Instr *instr) {
 		}
 		char const *name = NULL;
 		if (instr->name.len != 0) {
-			name = c0_string_to_cstr(&p->arena, instr->name);
+			name = c0_string_to_cstr(instr->name);
 		} else {
-			name = strf(&p->arena, "_C0_%u", instr->id);
+			name = strf("_C0_%u", instr->id);
 		}
-		c0_printf(p, "%s = ", c0_type_to_cdecl(&p->arena, instr->agg_type, name));
+		c0_printf(p, "%s = ", c0_type_to_cdecl(instr->agg_type, name));
 	} else if (instr->basic_type != C0Basic_void) {
 		c0_printf(p, "%s", c0_basic_names[instr->basic_type]);
 		if (instr->basic_type != C0Basic_ptr) {
@@ -255,7 +253,7 @@ void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent) {
 
 	case C0Instr_addr:
 		C0_ASSERT(instr->basic_type == C0Basic_ptr);
-		C0_ASSERT(instr->args_len == 1);
+		C0_ASSERT(c0_array_len(instr->args) == 1);
 		c0_printf(p, "_C0_addr(");
 		c0_print_instr_arg(p, instr->args[0], indent);
 		c0_printf(p, ")");
@@ -263,13 +261,13 @@ void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent) {
 
 
 	case C0Instr_convert:
-		C0_ASSERT(instr->args_len == 1);
+		C0_ASSERT(c0_array_len(instr->args) == 1);
 		c0_printf(p, "_C0_convert_%s_to_%s(", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
 		c0_print_instr_arg(p, instr->args[0], indent);
 		c0_printf(p, ")");
 		return;
 	case C0Instr_reinterpret:
-		C0_ASSERT(instr->args_len == 1);
+		C0_ASSERT(c0_array_len(instr->args) == 1);
 		c0_printf(p, "_C0_reinterpret_%s_to_%s(", c0_basic_names[instr->args[0]->basic_type], c0_basic_names[instr->basic_type]);
 		c0_print_instr_arg(p, instr->args[0], indent);
 		c0_printf(p, ")");
@@ -291,7 +289,7 @@ void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent) {
 	case C0Instr_select_f32:
 	case C0Instr_select_f64:
 	case C0Instr_select_ptr:
-		C0_ASSERT(instr->args_len == 3);
+		C0_ASSERT(c0_array_len(instr->args) == 3);
 		c0_print_instr_arg(p, instr->args[0], 0);
 		c0_printf(p, " ? ");
 		c0_print_instr_arg(p, instr->args[1], 0);
@@ -300,8 +298,8 @@ void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent) {
 		return;
 
 	case C0Instr_index_ptr:
-		C0_ASSERT(instr->args_len == 2);
-		c0_printf(p, "_C0_%s(%s, ", c0_instr_names[instr->kind], c0_type_to_cdecl(&p->arena, instr->agg_type->array.elem, ""));
+		C0_ASSERT(c0_array_len(instr->args) == 2);
+		c0_printf(p, "_C0_%s(%s, ", c0_instr_names[instr->kind], c0_type_to_cdecl(instr->agg_type->array.elem, ""));
 		c0_print_instr_arg(p, instr->args[0], 0);
 		c0_printf(p, ", ");
 		c0_print_instr_arg(p, instr->args[1], 0);
@@ -309,11 +307,11 @@ void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent) {
 		return;
 	case C0Instr_field_ptr:
 		{
-			C0_ASSERT(instr->args_len == 1);
+			C0_ASSERT(c0_array_len(instr->args) == 1);
 			C0_ASSERT(instr->agg_type && instr->agg_type->kind == C0AggType_record);
-			C0_ASSERT(instr->value_u64 < (u64)c0array_len(instr->agg_type->record.names));
+			C0_ASSERT(instr->value_u64 < (u64)c0_array_len(instr->agg_type->record.names));
 			C0String field_name = instr->agg_type->record.names[instr->value_u64];
-			c0_printf(p, "_C0_%s(%s, ", c0_instr_names[instr->kind], c0_type_to_cdecl(&p->arena, instr->agg_type, ""));
+			c0_printf(p, "_C0_%s(%s, ", c0_instr_names[instr->kind], c0_type_to_cdecl(instr->agg_type, ""));
 			c0_print_instr_arg(p, instr->args[0], 0);
 			c0_printf(p, ", %.*s", C0PSTR(field_name));
 			c0_printf(p, ")");
@@ -333,8 +331,8 @@ void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent) {
 	c0_printf(p, "(");
 	bool any_inline = false;
 	bool any_call = false;
-	if (instr->args_len > 1) {
-		for (isize i = 0; i < instr->args_len; i++) {
+	if (c0_array_len(instr->args) > 1) {
+		for (usize i = 0; i < c0_array_len(instr->args); i++) {
 			C0Instr *arg = instr->args[i];
 			if (arg->flags & C0InstrFlag_print_inline) {
 				any_inline = true;
@@ -350,17 +348,17 @@ void c0_print_instr_expr(C0Printer *p, C0Instr *instr, usize indent) {
 		c0_printf(p, "\n");
 	}
 	if (do_indent) {
-		for (isize i = 0; i < instr->args_len; i++) {
+		for (usize i = 0; i < c0_array_len(instr->args); i++) {
 			C0Instr *arg = instr->args[i];
 			c0_print_indent(p, indent+1);
 			c0_print_instr_arg(p, arg, indent+1);
-			if (i+1 < instr->args_len) {
+			if (i+1 < c0_array_len(instr->args)) {
 				c0_printf(p, ",");
 			}
 			c0_printf(p, "\n");
 		}
 	} else {
-		for (isize i = 0; i < instr->args_len; i++) {
+		for (usize i = 0; i < c0_array_len(instr->args); i++) {
 			if (i != 0) {
 				c0_printf(p, ", ");
 			}
@@ -452,8 +450,8 @@ void c0_print_instr(C0Printer *p, C0Instr *instr, usize indent, bool ignore_firs
 		return;
 	case C0Instr_return:
 		c0_printf(p, "return");
-		if (instr->args_len != 0) {
-			C0_ASSERT(instr->args_len == 1);
+		if (c0_array_len(instr->args) != 0) {
+			C0_ASSERT(c0_array_len(instr->args) == 1);
 			c0_printf(p, " ");
 			C0Instr *arg = instr->args[0];
 			c0_instr_print_inline_as_condition(p, arg);
@@ -465,23 +463,23 @@ void c0_print_instr(C0Printer *p, C0Instr *instr, usize indent, bool ignore_firs
 		c0_printf(p, "_C0_unreachable();\n");
 		return;
 	case C0Instr_goto:
-		C0_ASSERT(instr->args_len == 1);
+		C0_ASSERT(c0_array_len(instr->args) == 1);
 		C0_ASSERT(instr->args[0]->kind == C0Instr_label);
 		c0_printf(p, "goto %.*s;\n", C0PSTR(instr->args[0]->name));
 		return;
 
 	case C0Instr_if:
-		C0_ASSERT(instr->args_len >= 1);
+		C0_ASSERT(c0_array_len(instr->args) >= 1);
 		c0_printf(p, "if (");
 		c0_instr_print_inline_as_condition(p, instr->args[0]);
 		c0_print_instr_arg(p, instr->args[0], indent);
 		c0_printf(p, ") {\n");
-		for (isize i = 0; i < c0array_len(instr->nested_instrs); i++) {
+		for (usize i = 0; i < c0_array_len(instr->nested_instrs); i++) {
 			c0_print_instr(p, instr->nested_instrs[i], indent+1, false);
 		}
 		c0_print_indent(p, indent);
 		c0_printf(p, "}");
-		if (instr->args_len == 2) {
+		if (c0_array_len(instr->args) == 2) {
 			c0_printf(p, " else ");
 			c0_print_instr(p, instr->args[1], indent, true);
 		} else {
@@ -491,7 +489,7 @@ void c0_print_instr(C0Printer *p, C0Instr *instr, usize indent, bool ignore_firs
 
 	case C0Instr_loop:
 		c0_printf(p, "for (;;) {\n");
-		for (isize i = 0; i < c0array_len(instr->nested_instrs); i++) {
+		for (usize i = 0; i < c0_array_len(instr->nested_instrs); i++) {
 			c0_print_instr(p, instr->nested_instrs[i], indent+1, false);
 		}
 		c0_print_indent(p, indent);
@@ -500,7 +498,7 @@ void c0_print_instr(C0Printer *p, C0Instr *instr, usize indent, bool ignore_firs
 
 	case C0Instr_block:
 		c0_printf(p, "{\n");
-		for (isize i = 0; i < c0array_len(instr->nested_instrs); i++) {
+		for (usize i = 0; i < c0_array_len(instr->nested_instrs); i++) {
 			c0_print_instr(p, instr->nested_instrs[i], indent+1, false);
 		}
 		c0_print_indent(p, indent);
@@ -578,14 +576,14 @@ void c0_gen_instructions_print(C0Printer *p, C0Gen *gen) {
 		c0_printf(p, "#define _C0_%s(RECORD_TYPE, ptr, field) (void *)&(((RECORD_TYPE *)(ptr))->field\n\n", c0_instr_names[C0Instr_field_ptr]);
 	}
 
-	static char const *masks[16] = {};
+	static char const *masks[17] = {};
 	masks[1] = "0xff";
 	masks[2] = "0xffff";
 	masks[4] = "0xffffffff";
 	masks[8] = "0xffffffffffffffff";
 	masks[16] = "(u128){0xffffffffffffffff, 0xffffffffffffffff}";
 
-	static char const *shift_masks[16] = {};
+	static char const *shift_masks[17] = {};
 	shift_masks[1] = "0x7";
 	shift_masks[2] = "0xf";
 	shift_masks[4] = "0x1f";
@@ -866,9 +864,8 @@ void c0_gen_instructions_print(C0Printer *p, C0Gen *gen) {
 }
 
 void c0_print_proc(C0Printer *p, C0Proc *procedure) {
-	C0Arena *a = &p->arena;
-	c0_printf(p, "%s {\n", c0_type_to_cdecl_internal(a, procedure->sig, c0_string_to_cstr(a, procedure->name), true));
-	for (isize i = 0; i < c0array_len(procedure->instrs); i++) {
+	c0_printf(p, "%s {\n", c0_type_to_cdecl_internal(procedure->sig, c0_string_to_cstr(procedure->name), true));
+	for (usize i = 0; i < c0_array_len(procedure->instrs); i++) {
 		c0_print_instr(p, procedure->instrs[i], 1, false);
 	}
 	c0_printf(p, "}\n\n");

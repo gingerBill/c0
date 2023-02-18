@@ -1,13 +1,14 @@
-#include "c0.c"
+#include "c0.h"
+#include "c0_print.h"
 
 C0Proc *test_factorial(C0Gen *gen) {
 	C0AggType *agg_u32 = c0_agg_type_basic(gen, C0Basic_u32);
 
 	C0Array(C0AggType *) sig_types = NULL;
-	c0array_push(sig_types, agg_u32);
+	c0_array_push(sig_types, agg_u32);
 
 	C0Array(C0String) sig_names = NULL;
-	c0array_push(sig_names, C0STR("n"));
+	c0_array_push(sig_names, C0STR("n"));
 
 	C0Proc *p = c0_proc_create(gen, C0STR("factorial"), c0_agg_type_proc(gen, agg_u32, sig_names, sig_types, 0));
 
@@ -25,7 +26,6 @@ C0Proc *test_factorial(C0Gen *gen) {
 		c0_push_return(p, res);
 	}
 
-
 	return c0_proc_finish(p);
 }
 
@@ -33,10 +33,10 @@ C0Proc *test_fibonacci(C0Gen *gen) {
 	C0AggType *agg_u32 = c0_agg_type_basic(gen, C0Basic_u32);
 
 	C0Array(C0AggType *) sig_types = NULL;
-	c0array_push(sig_types, agg_u32);
+	c0_array_push(sig_types, agg_u32);
 
 	C0Array(C0String) sig_names = NULL;
-	c0array_push(sig_names, C0STR("n"));
+	c0_array_push(sig_names, C0STR("n"));
 
 	C0Proc *p = c0_proc_create(gen, C0STR("fibonacci"), c0_agg_type_proc(gen, agg_u32, sig_names, sig_types, 0));
 
@@ -55,17 +55,21 @@ C0Proc *test_fibonacci(C0Gen *gen) {
 		c0_push_return(p, res);
 	}
 
-
 	return c0_proc_finish(p);
 }
 
-
+#include <stdio.h>
 
 int main(int argc, char const **argv) {
 	setvbuf(stdout, NULL, _IONBF, 0);
 	setvbuf(stderr, NULL, _IONBF, 0);
 
-	c0_platform_virtual_memory_init();
+	c0_context = C0_DEFAULT_CONTEXT;
+
+	const C0Allocator arena = c0_arena_create(&C0_STDLIB_ALLOCATOR);
+
+	c0_context.allocator = &arena;
+
 	C0Gen gen = {0};
 	c0_gen_init(&gen);
 
@@ -79,10 +83,16 @@ int main(int argc, char const **argv) {
 	c0_print_proc(&printer, factorial);
 	c0_print_proc(&printer, fibonacci);
 
-	arena_free_all(&printer.arena);
+	// arena_free_all(&printer.arena);
+
+	c0_deallocate_all();
+
+	c0_arena_destroy(&arena);
 
 	fflush(stderr);
 	fflush(stdout);
+
 	c0_gen_destroy(&gen);
+
 	return 0;
 }

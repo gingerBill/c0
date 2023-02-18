@@ -1,0 +1,7 @@
+#include "c0_allocator.c"
+#include "c0_array.c"
+#include "c0_context.c"
+#include "c0_logger.c"
+#include "c0_print.c"
+#include "c0_string.c"
+#include "c0.c"
