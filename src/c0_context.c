@@ -5,7 +5,7 @@
 #include "c0_allocator.h" // C0_STDLIB_ALLOCATOR
 #include "c0_logger.h" // C0_STDIO_LOGGER
 
-_Thread_local C0Context c0_context;
+C0_THREAD_LOCAL C0Context c0_context;
 
 const C0Context C0_DEFAULT_CONTEXT = {
 	&C0_STDLIB_ALLOCATOR,

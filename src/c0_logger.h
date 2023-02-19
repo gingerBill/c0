@@ -20,13 +20,13 @@ struct C0Logger {
 void c0_log(const C0SourceLocation *location, int level, const char *fmt, ...);
 
 #define c0_info(...) \
-	c0_log(&C0_SOURCE_LOCATION, C0_LOG_INFO, __VA_ARGS__)
+	c0_log(C0_SOURCE_LOCATION, C0_LOG_INFO, __VA_ARGS__)
 
 #define c0_warning(...) \
-	c0_log(&C0_SOURCE_LOCATION, C0_LOG_WARNING, __VA_ARGS__)
+	c0_log(C0_SOURCE_LOCATION, C0_LOG_WARNING, __VA_ARGS__)
 
 #define c0_error(...) \
-	c0_log(&C0_SOURCE_LOCATION, C0_LOG_ERROR, __VA_ARGS__)
+	c0_log(C0_SOURCE_LOCATION, C0_LOG_ERROR, __VA_ARGS__)
 
 extern const C0Logger C0_STDIO_LOGGER;
 

@@ -11,23 +11,7 @@ enum C0PrinterFlag_enum {
 	C0PrinterFlag_UseInlineArgs = 1u << 0u,
 };
 
-static const C0BasicType c0_basic_unsigned_type[C0Basic_COUNT] = {
-	C0Basic_void,
-	C0Basic_u8,
-	C0Basic_u8,
-	C0Basic_u16,
-	C0Basic_u16,
-	C0Basic_u32,
-	C0Basic_u32,
-	C0Basic_u64,
-	C0Basic_u64,
-	C0Basic_u128,
-	C0Basic_u128,
-	C0Basic_f16,
-	C0Basic_f32,
-	C0Basic_f64,
-	C0Basic_ptr,
-};
+extern const C0BasicType c0_basic_unsigned_type[C0Basic_COUNT];
 
 static void c0_printf(C0Array(u8) *buf, char const *fmt, ...) {
 	va_list va;
@@ -110,10 +94,11 @@ static C0String strf(char const *fmt, ...) {
 	const usize n = 1 + vsnprintf(NULL, 0, fmt, va);
 	va_end(va);
 	if (n) {
-		result.text = c0_allocate_uninitialized(n);
+		char *text = (char *)c0_allocate_uninitialized(n);
+		result.text = text;
 		result.len = n;
 		va_start(va, fmt);
-		vsnprintf((char*)result.text, n, fmt, va);
+		vsnprintf(text, n, fmt, va);
 		va_end(va);
 	}
 	return result;
@@ -334,8 +319,9 @@ static void c0_print_instr_expr(C0Array(u8) *buf, const C0Instr *instr, usize in
 	c0_printf(buf, "(");
 	bool any_inline = false;
 	bool any_call = false;
-	if (c0_array_len(instr->args) > 1) {
-		for (usize i = 0; i < c0_array_len(instr->args); i++) {
+	const usize n_args = c0_array_len(instr->args);
+	if (n_args > 1) {
+		for (usize i = 0; i < n_args; i++) {
 			C0Instr *arg = instr->args[i];
 			if (arg->flags & C0InstrFlag_print_inline) {
 				any_inline = true;
@@ -351,17 +337,17 @@ static void c0_print_instr_expr(C0Array(u8) *buf, const C0Instr *instr, usize in
 		c0_printf(buf, "\n");
 	}
 	if (do_indent) {
-		for (usize i = 0; i < c0_array_len(instr->args); i++) {
+		for (usize i = 0; i < n_args; i++) {
 			C0Instr *arg = instr->args[i];
 			c0_print_indent(buf, indent+1);
 			c0_print_instr_arg(buf, arg, indent+1);
-			if (i+1 < c0_array_len(instr->args)) {
+			if (i+1 < n_args) {
 				c0_printf(buf, ",");
 			}
 			c0_printf(buf, "\n");
 		}
 	} else {
-		for (usize i = 0; i < c0_array_len(instr->args); i++) {
+		for (usize i = 0; i < n_args; i++) {
 			if (i != 0) {
 				c0_printf(buf, ", ");
 			}
@@ -476,40 +462,49 @@ static void c0_print_instr(C0Array(u8) *buf, const C0Instr *instr, usize indent,
 		return;
 
 	case C0Instr_if:
-		C0_ASSERT(c0_array_len(instr->args) >= 1);
-		c0_printf(buf, "if (");
-		c0_instr_print_inline_as_condition(buf, instr->args[0]);
-		c0_print_instr_arg(buf, instr->args[0], indent);
-		c0_printf(buf, ") {\n");
-		for (usize i = 0; i < c0_array_len(instr->nested_instrs); i++) {
-			c0_print_instr(buf, instr->nested_instrs[i], indent+1, false);
-		}
-		c0_print_indent(buf, indent);
-		c0_printf(buf, "}");
-		if (c0_array_len(instr->args) == 2) {
-			c0_printf(buf, " else ");
-			c0_print_instr(buf, instr->args[1], indent, true);
-		} else {
-			c0_printf(buf, "\n");
+		{
+			C0_ASSERT(c0_array_len(instr->args) >= 1);
+			c0_printf(buf, "if (");
+			c0_instr_print_inline_as_condition(buf, instr->args[0]);
+			c0_print_instr_arg(buf, instr->args[0], indent);
+			c0_printf(buf, ") {\n");
+			const usize n_nested_instrs = c0_array_len(instr->nested_instrs);
+			for (usize i = 0; i < n_nested_instrs; i++) {
+				c0_print_instr(buf, instr->nested_instrs[i], indent+1, false);
+			}
+			c0_print_indent(buf, indent);
+			c0_printf(buf, "}");
+			if (c0_array_len(instr->args) == 2) {
+				c0_printf(buf, " else ");
+				c0_print_instr(buf, instr->args[1], indent, true);
+			} else {
+				c0_printf(buf, "\n");
+			}
 		}
 		return;
 
 	case C0Instr_loop:
-		c0_printf(buf, "for (;;) {\n");
-		for (usize i = 0; i < c0_array_len(instr->nested_instrs); i++) {
-			c0_print_instr(buf, instr->nested_instrs[i], indent+1, false);
+		{
+			c0_printf(buf, "for (;;) {\n");
+			const usize n_nested_instrs = c0_array_len(instr->nested_instrs);
+			for (usize i = 0; i < n_nested_instrs; i++) {
+				c0_print_instr(buf, instr->nested_instrs[i], indent+1, false);
+			}
+			c0_print_indent(buf, indent);
+			c0_printf(buf, "}\n");
 		}
-		c0_print_indent(buf, indent);
-		c0_printf(buf, "}\n");
 		return;
 
 	case C0Instr_block:
-		c0_printf(buf, "{\n");
-		for (usize i = 0; i < c0_array_len(instr->nested_instrs); i++) {
-			c0_print_instr(buf, instr->nested_instrs[i], indent+1, false);
+		{
+			c0_printf(buf, "{\n");
+			const usize n_nested_instrs = c0_array_len(instr->nested_instrs);
+			for (usize i = 0; i < n_nested_instrs; i++) {
+				c0_print_instr(buf, instr->nested_instrs[i], indent+1, false);
+			}
+			c0_print_indent(buf, indent);
+			c0_printf(buf, "}\n");
 		}
-		c0_print_indent(buf, indent);
-		c0_printf(buf, "}\n");
 		return;
 	}
 
@@ -861,7 +856,8 @@ static void c0_gen_instructions_print(C0Array(u8) *buf, const C0Gen *gen) {
 static void c0_print_proc(C0Array(u8) *buf, const C0Proc *procedure) {
 	const C0String cdecl = c0_type_to_cdecl_internal(procedure->sig, procedure->name, true);
 	c0_printf(buf, "%.*s {\n", C0PSTR(cdecl));
-	for (usize i = 0; i < c0_array_len(procedure->instrs); i++) {
+	const usize n_instrs = c0_array_len(procedure->instrs);
+	for (usize i = 0; i < n_instrs; i++) {
 		c0_print_instr(buf, procedure->instrs[i], 1, false);
 	}
 	c0_printf(buf, "}\n\n");

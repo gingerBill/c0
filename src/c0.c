@@ -4,7 +4,7 @@
 #include "c0_logger.h"
 #include "c0_allocator.h"
 
-static const C0BasicType c0_basic_unsigned_type[C0Basic_COUNT] = {
+const C0BasicType c0_basic_unsigned_type[C0Basic_COUNT] = {
 	C0Basic_void,
 	C0Basic_u8,
 	C0Basic_u8,
@@ -182,16 +182,6 @@ static bool c0_types_array_equal(C0Array(C0AggType *) a, C0Array(C0AggType *) b)
 	return true;
 }
 
-static bool c0_strings_equal(C0String a, C0String b) {
-	if (a.len != b.len) {
-		return false;
-	}
-	if (a.text == b.text) {
-		return true;
-	}
-	return memcmp(a.text, b.text, a.len) == 0;
-}
-
 static bool c0_types_equal(C0AggType *a, C0AggType *b) {
 	if (a == b) {
 		return true;
@@ -203,7 +193,7 @@ static bool c0_types_equal(C0AggType *a, C0AggType *b) {
 		case C0AggType_array:
 			return a->array.len == b->array.len && a->array.elem == b->array.elem;
 		case C0AggType_record:
-			return c0_strings_equal(a->record.name, b->record.name);
+			return c0_string_compare(a->record.name, b->record.name);
 		case C0AggType_proc:
 			return c0_types_equal(a->proc.ret, b->proc.ret) &&
 			       c0_types_array_equal(a->proc.types, b->proc.types) &&
@@ -846,6 +836,7 @@ C0Instr *c0_push_index_ptr(C0Proc *p, C0AggType *array_type, C0Instr *array_ptr,
 	instr->args[1] = c0_use(index);
 	return c0_instr_push(p, instr);
 }
+
 C0Instr *c0_push_field_ptr(C0Proc *p, C0AggType *record_type, C0Instr *record_ptr, u32 field_index) {
 	C0_ASSERT(record_type && record_type->kind == C0AggType_array);
 	C0_ASSERT(record_ptr->basic_type == C0Basic_ptr);
@@ -1164,9 +1155,9 @@ C0Instr *c0_push_label(C0Proc *p, C0String name) {
 	// TODO(bill): make name unique if it isn't
 	C0Instr *instr = c0_instr_create(p, C0Instr_label);
 	instr->name = c0_string_copy(name);
-	usize n = c0_array_len(p->labels);
+	const usize n = c0_array_len(p->labels);
 	for (usize i = 0; i < n; i++) {
-		if (!c0_strings_equal(p->labels[i]->name, name)) {
+		if (!c0_string_compare(p->labels[i]->name, name)) {
 			c0_error("non-unique label names: %.*s", C0PSTR(name));
 		}
 	}
@@ -1276,7 +1267,8 @@ void c0_pass_remove_unused_instructions(C0Array(C0Instr *) *array) {
 				continue;
 			}
 			if (instr->uses == 0) {
-				for (usize j = 0; j < c0_array_len(instr->args); j++) {
+				const usize n_args = c0_array_len(instr->args);
+				for (usize j = 0; j < n_args; j++) {
 					c0_unuse(instr->args[j]);
 				}
 				c0_array_ordered_remove((*array), i);
@@ -1317,7 +1309,8 @@ void c0_assign_reg_id(C0Instr *instr, u32 *reg_id_) {
 	}
 
 	if (instr->nested_instrs) {
-		for (usize i = 0; i < c0_array_len(instr->nested_instrs); i++) {
+		const usize n_nested_instrs = c0_array_len(instr->nested_instrs);
+		for (usize i = 0; i < n_nested_instrs; i++) {
 			c0_assign_reg_id(instr->nested_instrs[i], reg_id_);
 		}
 	}
@@ -1340,10 +1333,9 @@ void c0_register_instr_to_gen(C0Gen *gen, C0Instr *instr) {
 		gen->reinterpret_to_generate[instr->args[0]->basic_type][instr->basic_type] = true;
 		break;
 	}
-	if (instr->nested_instrs) {
-		for (usize i = 0; i < c0_array_len(instr->nested_instrs); i++) {
-			c0_register_instr_to_gen(gen, instr->nested_instrs[i]);
-		}
+	const usize n_nested_instrs = c0_array_len(instr->nested_instrs);
+	for (usize i = 0; i < n_nested_instrs; i++) {
+		c0_register_instr_to_gen(gen, instr->nested_instrs[i]);
 	}
 	if (instr->kind == C0Instr_if && c0_array_len(instr->args) == 2) {
 		c0_register_instr_to_gen(gen, instr->args[1]);
@@ -1366,8 +1358,8 @@ C0Proc *c0_proc_finish(C0Proc *p) {
 	}
 
 	u32 reg_id = 0;
-
-	for (usize i = 0; i < c0_array_len(p->instrs); i++) {
+	const usize n_instrs = c0_array_len(p->instrs);
+	for (usize i = 0; i < n_instrs; i++) {
 		C0Instr *instr = p->instrs[i];
 		c0_assign_reg_id(instr, &reg_id);
 		c0_register_instr_to_gen(p->gen, instr);

@@ -29,4 +29,25 @@
 #define C0_NORETURN _Noreturn
 #endif // defined(__cplusplus)
 
+#if defined(__cplusplus)
+# define C0_THREAD_LOCAL thread_local
+#else
+# define C0_THREAD_LOCAL _Thread_local
+#endif // defined(__cplusplus)
+
+#if defined(__cplusplus)
+template<typename T>
+const T *C0_ADDR_OF_RVAL(const T& ref) noexcept {
+	return &ref;
+}
+#else
+#	define C0_ADDR_OF_RVAL(ref) (&(ref))
+#endif // defined(__cplusplus)
+
+#if defined(__cplusplus)
+#	define C0_ALIGNOF(T) alignof(T)
+#else
+#	define C0_ALIGNOF(T) _Alignof(T)
+#endif // defined(__cplusplus)
+
 #endif // C0_CONFIG_H

@@ -13,6 +13,6 @@ struct C0Context {
 
 extern const C0Context C0_DEFAULT_CONTEXT;
 
-extern _Thread_local C0Context c0_context;
+extern C0_THREAD_LOCAL C0Context c0_context;
 
 #endif // C0_CONTEXT_H

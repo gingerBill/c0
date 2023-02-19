@@ -38,6 +38,6 @@ struct C0SourceLocation {
 };
 
 #define C0_SOURCE_LOCATION \
-	C0_LIT(const C0SourceLocation, __FILE__, __func__, __LINE__)
+	C0_ADDR_OF_RVAL(C0_LIT(C0SourceLocation, __FILE__, __func__, __LINE__))
 
 #endif // C0_TYPES_H

@@ -79,7 +79,7 @@ static void *arena_allocate(Arena *arena, usize min_size, usize alignment) {
 			block_size = MINIMUM_BLOCK_SIZE;
 		}
 
-		Block *new_block = arena->base->allocate(arena->base->user, block_size);
+		Block *new_block = (Block *)arena->base->allocate(arena->base->user, block_size);
 		if (!new_block) {
 			return 0;
 		}
@@ -113,11 +113,11 @@ static void arena_deallocate_all(Arena *arena) {
 }
 
 static void *allocate_arena(void *user, usize bytes) {
-	return arena_allocate(user, bytes, _Alignof(max_align_t));
+	return arena_allocate((Arena *)user, bytes, C0_ALIGNOF(max_align_t));
 }
 
 static void *reallocate_arena(void *user, void *data, usize bytes) {
-	void *resize = allocate_arena(user, bytes);
+	void *resize = allocate_arena((Arena *)user, bytes);
 	if (data) {
 		usize size = ((usize*)data)[-1];
 		memcpy(resize, data, size);
@@ -132,11 +132,11 @@ static void deallocate_arena(void *user, void *data) {
 }
 
 static void deallocate_all_arena(void *user) {
-	arena_deallocate_all(user);
+	arena_deallocate_all((Arena *)user);
 }
 
 C0Allocator c0_arena_create(const C0Allocator *allocator) {
-	Arena *arena = allocator->allocate(allocator->user, sizeof(Arena));
+	Arena *arena = (Arena *)allocator->allocate(allocator->user, sizeof(Arena));
 	arena->base = allocator;
 	arena->block = 0;
 
@@ -152,7 +152,7 @@ C0Allocator c0_arena_create(const C0Allocator *allocator) {
 
 void c0_arena_destroy(const C0Allocator *allocator) {
 	deallocate_all_arena(allocator->user);
-	Arena *arena = allocator->user;
+	Arena *arena = (Arena *)allocator->user;
 	const C0Allocator *base = arena->base;
 	base->deallocate(base->user, arena);
 }
