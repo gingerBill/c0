@@ -151,6 +151,7 @@ C0Allocator c0_arena_create(const C0Allocator *allocator) {
 }
 
 void c0_arena_destroy(const C0Allocator *allocator) {
+	deallocate_all_arena(allocator->user);
 	Arena *arena = allocator->user;
 	const C0Allocator *base = arena->base;
 	base->deallocate(base->user, arena);

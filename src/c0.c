@@ -366,7 +366,7 @@ static bool c0_is_instruction_terminating(C0Instr *instr) {
 C0Instr *c0_instr_push(C0Proc *p, C0Instr *instr) {
 	if (c0_is_instruction_terminating(c0_instr_last(p))) {
 		c0_warning("next instruction will never be executed");
-		return NULL;
+		return instr;
 	}
 
 	const usize n = c0_array_len(p->nested_blocks);

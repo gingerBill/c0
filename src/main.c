@@ -85,8 +85,6 @@ int main(void) {
 
 	printf("%s\n", data);
 
-	c0_deallocate_all();
-
 	c0_arena_destroy(&arena);
 
 	return 0;
