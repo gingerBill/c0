@@ -1,6 +1,5 @@
 #ifndef C0_ALLOCATOR_H
 #define C0_ALLOCATOR_H
-
 #include "c0_types.h" // usize
 
 typedef struct C0Allocator C0Allocator;

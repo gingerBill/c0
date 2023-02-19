@@ -6,7 +6,7 @@
 typedef struct C0String C0String;
 
 struct C0String {
-	char const *text;
+	const char *text;
 	usize len;
 };
 
@@ -21,5 +21,6 @@ struct C0String {
 #endif
 
 C0String c0_string_copy(C0String string);
+bool c0_string_compare(C0String lhs, C0String rhs);
 
 #endif // C0_STRING_H

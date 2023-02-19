@@ -1,9 +1,9 @@
 #include <stdio.h>
 
 #include "c0.h"
-#include "c0_print.h"
 #include "c0_allocator.h"
 #include "c0_context.h"
+#include "c0_backend.h"
 
 C0Proc *test_factorial(C0Gen *gen) {
 	C0AggType *agg_u32 = c0_agg_type_basic(gen, C0Basic_u32);
@@ -76,15 +76,14 @@ int main(void) {
 	C0Gen gen = {0};
 	c0_gen_init(&gen);
 
-	C0Proc *factorial = test_factorial(&gen);
-	C0Proc *fibonacci = test_fibonacci(&gen);
+	test_factorial(&gen);
+	test_fibonacci(&gen);
 
-	C0Printer printer = {0};
-	printer.flags |= C0PrinterFlag_UseInlineArgs;
+	C0Array(u8) data = c0_emit(&gen, C0STR("C"));
 
-	c0_gen_instructions_print(&printer, &gen);
-	c0_print_proc(&printer, factorial);
-	c0_print_proc(&printer, fibonacci);
+	c0_array_push(data, 0);
+
+	printf("%s\n", data);
 
 	c0_deallocate_all();
 

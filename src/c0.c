@@ -40,8 +40,6 @@ static u8 c0_basic_unsigned_instr_offset[C0Basic_COUNT] = {
 	8,
 };
 
-char *c0_type_to_cdecl(C0AggType *type, char const *str);
-
 i64 c0_basic_type_size(C0Gen *gen, C0BasicType type) {
 	i64 size = c0_basic_type_sizes[type];
 	if (size < 0) {
@@ -242,18 +240,20 @@ static bool c0_types_agg_agg(C0AggType *a, C0AggType *b) {
 }
 
 C0Proc *c0_proc_create(C0Gen *gen, C0String name, C0AggType *sig) {
+	C0_ASSERT(sig && sig->kind == C0AggType_proc);
+
 	C0Proc *p = c0_new(C0Proc);
-	
 	C0_ASSERT(p);
+
 	p->gen = gen;
 	p->name = c0_string_copy(name);
-	C0_ASSERT(sig && sig->kind == C0AggType_proc);
 	p->sig = sig;
 
 	const usize n = c0_array_len(sig->proc.names);
 	if (n) {
 		C0_ASSERT(n == c0_array_len(sig->proc.types));
 	}
+	
 	for (usize i = 0; i < n; i++) {
 		C0AggType *type = sig->proc.types[i];
 		C0String name = sig->proc.names[i];
@@ -269,6 +269,8 @@ C0Proc *c0_proc_create(C0Gen *gen, C0String name, C0AggType *sig) {
 			c0_array_push(p->parameters, instr);
 		}
 	}
+
+	c0_array_push(gen->procs, p);
 
 	return p;
 }
@@ -716,6 +718,9 @@ C0Instr *c0_push_unreachable(C0Proc *p) {
 	return c0_instr_push(p, ret);
 }
 
+// TODO(dweiler): In c0_backend_c.c, maybe refactor cdecl to it's own package.
+C0String c0_type_to_cdecl(const C0AggType *type, C0String str);
+
 C0Instr *c0_push_return(C0Proc *p, C0Instr *arg) {
 	C0Instr *last = c0_instr_last(p);
 	if (c0_is_instruction_terminating(last)) {
@@ -728,10 +733,12 @@ C0Instr *c0_push_return(C0Proc *p, C0Instr *arg) {
 		C0_ASSERT(p->sig);
 		if (arg->agg_type) {
 			if (!c0_types_agg_agg(p->sig->proc.ret, arg->agg_type)) {
-				c0_error("mismatching types in return: expected %s, got %s\n", c0_type_to_cdecl(p->sig->proc.ret, ""), c0_basic_names[arg->basic_type]);
+				const C0String cdecl = c0_type_to_cdecl(p->sig->proc.ret, C0STR(""));
+				c0_error("mismatching types in return: expected %.*s, got %s\n", C0PSTR(cdecl), c0_basic_names[arg->basic_type]);
 			}
 		} else if (!c0_types_agg_basic(p->sig->proc.ret, arg->basic_type)) {
-			c0_error("mismatching types in return: expected %s, got %s\n", c0_type_to_cdecl(p->sig->proc.ret, ""), c0_basic_names[arg->basic_type]);
+			const C0String cdecl = c0_type_to_cdecl(p->sig->proc.ret, C0STR(""));
+			c0_error("mismatching types in return: expected %.*s, got %s\n", C0PSTR(cdecl), c0_basic_names[arg->basic_type]);
 		}
 		c0_alloc_args(p, ret, 1);
 		ret->args[0] = c0_use(arg);
@@ -914,7 +921,6 @@ C0Instr *c0_push_copy_basic(C0Proc *p, C0Instr *arg) {
 	return instr;
 }
 
-
 C0Instr *c0_push_unaligned_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
 	C0_ASSERT(src->basic_type != C0Basic_void);
 	if (dst->kind == C0Instr_decl) {
@@ -931,9 +937,11 @@ C0Instr *c0_push_unaligned_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
 	C0Instr *len = c0_push_basic_u32(p, (i32)size);
 	return c0_push_memmove(p, dst, src, len);
 }
+
 C0Instr *c0_push_volatile_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
 	return c0_push_unaligned_store_basic(p, dst, src);
 }
+
 C0Instr *c0_push_unaligned_load_basic(C0Proc *p, C0BasicType type, C0Instr *ptr) {
 	if (ptr->kind == C0Instr_decl) {
 		C0_ASSERT(type == ptr->basic_type);
