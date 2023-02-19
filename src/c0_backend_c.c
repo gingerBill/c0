@@ -11,7 +11,7 @@ enum C0PrinterFlag_enum {
 	C0PrinterFlag_UseInlineArgs = 1u << 0u,
 };
 
-static C0BasicType c0_basic_unsigned_type[C0Basic_COUNT] = {
+static const C0BasicType c0_basic_unsigned_type[C0Basic_COUNT] = {
 	C0Basic_void,
 	C0Basic_u8,
 	C0Basic_u8,

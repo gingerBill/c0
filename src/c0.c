@@ -4,7 +4,7 @@
 #include "c0_logger.h"
 #include "c0_allocator.h"
 
-static C0BasicType c0_basic_unsigned_type[C0Basic_COUNT] = {
+static const C0BasicType c0_basic_unsigned_type[C0Basic_COUNT] = {
 	C0Basic_void,
 	C0Basic_u8,
 	C0Basic_u8,
@@ -22,7 +22,7 @@ static C0BasicType c0_basic_unsigned_type[C0Basic_COUNT] = {
 	C0Basic_ptr,
 };
 
-static u8 c0_basic_unsigned_instr_offset[C0Basic_COUNT] = {
+static const u8 c0_basic_unsigned_instr_offset[C0Basic_COUNT] = {
 	0,
 	0,
 	0,
