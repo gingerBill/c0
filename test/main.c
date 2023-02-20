@@ -1,9 +1,9 @@
 #include <stdio.h>
 
-#include "c0.h"
-#include "c0_allocator.h"
-#include "c0_context.h"
-#include "c0_backend.h"
+#include <c0.h>
+#include <c0_allocator.h>
+#include <c0_context.h>
+#include <c0_backend.h>
 
 C0Proc *test_factorial(C0Gen *gen) {
 	C0AggType *agg_u32 = c0_agg_type_basic(gen, C0Basic_u32);
@@ -21,7 +21,10 @@ C0Proc *test_factorial(C0Gen *gen) {
 	C0Instr *cond = c0_push_lt(p, n, c0_push_basic_u32(p, 2));
 	c0_push_if(p, cond);
 	{
-		c0_push_return(p, c0_push_basic_u32(p, 1));
+		C0Instr *decl = c0_push_decl_basic(p, C0Basic_u32, C0_SLIT("val"));
+		C0Instr *addr = c0_push_addr_of_decl(p, decl);
+		c0_push_return(p, c0_push_atomic_load_basic(p, C0Basic_u32, addr));
+		// c0_push_return(p, c0_push_basic_u32(p, 1));
 	}
 	c0_pop_if(p);
 	{

@@ -4,7 +4,7 @@ TSAN ?= 0
 UBSAN ?= 0
 DEBUG ?= 0
 PROFILE ?= 0
-SRCDIR ?= src
+SRCDIR ?= .
 UNUSED ?= 1
 
 rwildcard = $(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2) $(filter $(subst *,%,$2),$d))
@@ -13,7 +13,6 @@ uniq = $(if $1,$(firstword $1) $(call uniq,$(filter-out $(firstword $1),$1)))
 CC := gcc
 CC ?= clang
 LD := $(CC)
-AR := ar
 
 ifeq ($(DEBUG),1)
 	TYPE := debug
@@ -23,7 +22,7 @@ else
 	TYPE := release
 endif
 
-LIB := c0.a
+BIN := test
 
 OBJDIR := .build/$(TYPE)/objs
 DEPDIR := .build/$(TYPE)/deps
@@ -38,6 +37,7 @@ DEPS := $(filter %.d,$(SRCS:%.c=$(DEPDIR)/%.d))
 CFLAGS := -Wall
 CFLAGS += -Wextra
 CFLAGS += -std=c11
+CFLAGS += -I../src
 
 ifeq ($(DEBUG),1)
 	# Optimize for debugging
@@ -114,7 +114,39 @@ endif
 DEPFLAGS := -MMD
 DEPFLAGS += -MP
 
-all: $(LIB)
+LDFLAGS := -L../
+LDFLAGS += -l:c0.a
+
+# Strip unused symbols, if requested
+ifeq ($(UNUSED),1)
+	LDFLAGS += -Wl,--gc-sections
+endif
+
+# Enable profiling libraries, if requested
+ifeq ($(PROFILE),1)
+	LDFLAGS += -pg
+
+	# Cannot use position independent code when using gprof
+	LDFLAGS += -no-pie
+endif
+
+# Enable LTO, if requested
+ifeq ($(LTO),1)
+	LDFLAGS += -flto
+endif
+
+# Select various sanitizers for linker flags
+ifeq ($(ASAN),1)
+	LDFLAGS += -fsanitize=address
+endif
+ifeq ($(TSAN),1)
+	LDFLAGS += -fsanitize=thread
+endif
+ifeq ($(UBSAN),1)
+	LDFLAGS += -fsanitize=undefined
+endif
+
+all: $(BIN)
 
 # Ensure build artifact directories exist
 $(DEPDIR):
@@ -126,11 +158,11 @@ $(OBJDIR)/%.o: %.c $(DEPDIR)/%.d | $(OBJDIR) $(DEPDIR)
 	$(CC) -MT $@ $(DEPFLAGS) -MF $(DEPDIR)/$*.Td $(CFLAGS) -c -o $@ $<
 	@mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d
 
-$(LIB): $(OBJS)
-	$(AR) rcs $@ $(OBJS)
+$(BIN): $(OBJS)
+	$(LD) $(OBJS) $(LDFLAGS) -o $@
 
 clean:
-	rm -rf $(DEPDIR) $(OBJDIR) $(LIB)
+	rm -rf $(DEPDIR) $(OBJDIR) $(BIN)
 
 $(DEPS):
 include $(wildcard $(DEPS))
