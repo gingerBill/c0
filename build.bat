@@ -29,15 +29,15 @@ set compiler_warnings= ^
 	-wd4456 -wd4457
 
 set compiler_includes= ^
-	/Isrc\
+	/Ilib\
 
 set compiler_settings=-c %compiler_includes% %compiler_flags% %compiler_warnings% %compiler_defines%
 
 del *.pdb > NUL 2> NUL
 del *.ilk > NUL 2> NUL
 
-cl "src\c0_unity.c" %compiler_settings% 
-lib "src\c0_unity.o" %lib_name%
+cl "lib\c0_unity.c" %compiler_settings% 
+lib "lib\c0_unity.o" %lib_name%
 
 if %errorlevel% neq 0 goto end_of_build
 
