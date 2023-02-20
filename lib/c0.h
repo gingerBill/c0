@@ -126,9 +126,11 @@ struct C0Loc {
 typedef u32 C0InstrFlags;
 enum C0InstrFlags_enum {
 	C0InstrFlag_print_inline = 1u<<16u,
+	C0InstrFlag_seen = 1u<<1u,
 };
 
 struct C0Instr {
+	int reg;
 	C0InstrKind  kind;
 	C0BasicType  basic_type;
 	u16          padding0;
