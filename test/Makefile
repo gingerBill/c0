@@ -37,7 +37,7 @@ DEPS := $(filter %.d,$(SRCS:%.c=$(DEPDIR)/%.d))
 CFLAGS := -Wall
 CFLAGS += -Wextra
 CFLAGS += -std=c11
-CFLAGS += -I../src
+CFLAGS += -I../lib
 
 ifeq ($(DEBUG),1)
 	# Optimize for debugging

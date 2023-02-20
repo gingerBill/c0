@@ -4,7 +4,7 @@ TSAN ?= 0
 UBSAN ?= 0
 DEBUG ?= 0
 PROFILE ?= 0
-SRCDIR ?= src
+SRCDIR ?= lib
 UNUSED ?= 1
 
 rwildcard = $(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2) $(filter $(subst *,%,$2),$d))
