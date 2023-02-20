@@ -46,7 +46,7 @@ static void c0_print_agg_type(C0Array(u8) *buf, const C0AggType *type, C0String 
 		break;
 	case C0AggType_array:
 		c0_print_agg_type(buf, type->array.elem, C0_LIT(C0String));
-		c0_printf(buf, " (%.*s)[%lld]", C0PSTR(name), (long long)type->array.len);
+		c0_printf(buf, " (%.*s)[%lld]", C0_SFMT(name), (long long)type->array.len);
 		break;
 	case C0AggType_record:
 		c0_error("TODO record printing");
@@ -81,7 +81,7 @@ static void c0_print_instr_arg(C0Array(u8) *buf, const C0Instr *instr, usize ind
 		return;
 	}
 	if (instr->name.len != 0) {
-		c0_printf(buf, "%.*s", C0PSTR(instr->name));
+		c0_printf(buf, "%.*s", C0_SFMT(instr->name));
 	} else {
 		c0_printf(buf, "_C0_%u", instr->id);
 	}
@@ -105,38 +105,34 @@ static C0String strf(char const *fmt, ...) {
 }
 
 static C0String c0_cdecl_paren(C0String str, char c) {
-	return c && c != '[' ? strf("(%.*s)", C0PSTR(str)) : str;
+	return c && c != '[' ? strf("(%.*s)", C0_SFMT(str)) : str;
 }
 
-static C0String c0_type_to_cdecl_internal(const C0AggType *type, C0String str, bool ignore_proc_ptr);
+static void put_cdecl(C0Array(u8) *buf, const C0AggType *type, C0String str);
 
-C0String c0_type_to_cdecl(const C0AggType *type, C0String str) {
-	return c0_type_to_cdecl_internal(type, str, false);
-}
-
-static C0String c0_type_to_cdecl_internal(const C0AggType *type, C0String str, bool ignore_proc_ptr) {
+C0String c0_type_to_cdecl(const C0AggType *type, C0String str, bool ignore_proc_ptr) {
 	switch (type->kind) {
 	case C0AggType_basic:
 		if (type->basic.type == C0Basic_ptr) {
-			const C0String paren = c0_cdecl_paren(strf("*.*%s", C0PSTR(str)), str.text[0]);
-			return strf("void %.*s", C0PSTR(paren));
+			const C0String paren = c0_cdecl_paren(strf("*.*%s", C0_SFMT(str)), str.text[0]);
+			return strf("void %.*s", C0_SFMT(paren));
 		} else {
 			char const *s = c0_basic_names[type->basic.type];
-			return strf("%s%s%.*s", s, str.len ? " " : "", C0PSTR(str));
+			return strf("%s%s%.*s", s, str.len ? " " : "", C0_SFMT(str));
 		}
 	case C0AggType_array:
 		return c0_type_to_cdecl(type->array.elem,
-			c0_cdecl_paren(strf("%.*s[%llu]", C0PSTR(str), (unsigned long long)type->array.len), str.text[0]));
+			c0_cdecl_paren(strf("%.*s[%llu]", C0_SFMT(str), (unsigned long long)type->array.len), str.text[0]), false);
 	case C0AggType_record:
 		C0_ASSERT(type->record.name.len != 0);
-		return strf("%.*s", C0PSTR(type->record.name));
+		return strf("%.*s", C0_SFMT(type->record.name));
 	case C0AggType_proc:
 		{
 			C0Array(u8) buf = NULL;
 			if (ignore_proc_ptr) {
-				c0_printf(&buf, "%.*s(", C0PSTR(str));
+				c0_printf(&buf, "%.*s(", C0_SFMT(str));
 			} else {
-				c0_printf(&buf, "(*%.*s)(", C0PSTR(str));
+				c0_printf(&buf, "(*%.*s)(", C0_SFMT(str));
 			}
 			const usize n = c0_array_len(type->proc.types);
 			if (n == 0)  {
@@ -151,23 +147,26 @@ static C0String c0_type_to_cdecl_internal(const C0AggType *type, C0String str, b
 					if (ignore_proc_ptr && name_len == n) {
 						const C0String name = type->proc.names[i];
 						if (name.len != 0) {
-							const C0String cdecl = c0_type_to_cdecl(pt, name);
-							c0_printf(&buf, "%.*s", C0PSTR(cdecl));
+							put_cdecl(&buf, pt, name);
 							continue;
 						}
 					}
-					const C0String cdecl = c0_type_to_cdecl(pt, C0STR(""));
-					c0_printf(&buf, "%.*s", C0PSTR(cdecl));
+					put_cdecl(&buf, pt, C0_SLIT(""));
 				}
 				if (type->proc.flags & C0ProcFlag_variadic) {
 					c0_printf(&buf, ", ...");
 				}
 				c0_printf(&buf, ")");
 			}
-			return c0_type_to_cdecl(type->proc.ret, C0_LIT(C0String, (char*)buf, c0_array_len(buf)));
+			return c0_type_to_cdecl(type->proc.ret, C0_LIT(C0String, (char*)buf, c0_array_len(buf)), false);
 		}
 	}
 	return C0_LIT(C0String);
+}
+
+static void put_cdecl(C0Array(u8) *buf, const C0AggType *type, C0String str) {
+	const C0String cdecl = c0_type_to_cdecl(type, str, false);
+	c0_printf(buf, "%.*s", C0_SFMT(cdecl));
 }
 
 static void c0_print_instr_creation(C0Array(u8) *buf, const C0Instr *instr) {
@@ -182,7 +181,8 @@ static void c0_print_instr_creation(C0Array(u8) *buf, const C0Instr *instr) {
 			return;
 		}
 		const C0String name = instr->name.len ? instr->name : strf("_C0_%u", instr->id);
-		c0_printf(buf, "%s = ", c0_type_to_cdecl(instr->agg_type, name));
+		put_cdecl(buf, instr->agg_type, name);
+		c0_printf(buf, " = ");
 	} else if (instr->basic_type != C0Basic_void) {
 		c0_printf(buf, "%s", c0_basic_names[instr->basic_type]);
 		if (instr->basic_type != C0Basic_ptr) {
@@ -284,8 +284,8 @@ static void c0_print_instr_expr(C0Array(u8) *buf, const C0Instr *instr, usize in
 	case C0Instr_index_ptr:
 		{
 			C0_ASSERT(c0_array_len(instr->args) == 2);
-			const C0String cdecl = c0_type_to_cdecl(instr->agg_type->array.elem, C0STR(""));
-			c0_printf(buf, "_C0_%s(%.*s, ", c0_instr_names[instr->kind], C0PSTR(cdecl));
+			c0_printf(buf, "_C0_%s(",  c0_instr_names[instr->kind]);
+			put_cdecl(buf, instr->agg_type->array.elem, C0_SLIT(""));
 			c0_print_instr_arg(buf, instr->args[0], 0);
 			c0_printf(buf, ", ");
 			c0_print_instr_arg(buf, instr->args[1], 0);
@@ -298,17 +298,17 @@ static void c0_print_instr_expr(C0Array(u8) *buf, const C0Instr *instr, usize in
 			C0_ASSERT(instr->agg_type && instr->agg_type->kind == C0AggType_record);
 			C0_ASSERT(instr->value_u64 < (u64)c0_array_len(instr->agg_type->record.names));
 			const C0String field_name = instr->agg_type->record.names[instr->value_u64];
-			const C0String cdecl = c0_type_to_cdecl(instr->agg_type, C0STR(""));
-			c0_printf(buf, "_C0_%s(%s, ", c0_instr_names[instr->kind], C0PSTR(cdecl));
+			c0_printf(buf, "_C0_%s(%s, ", c0_instr_names[instr->kind]); 
+			put_cdecl(buf, instr->agg_type, C0_SLIT(""));
 			c0_print_instr_arg(buf, instr->args[0], 0);
-			c0_printf(buf, ", %.*s", C0PSTR(field_name));
+			c0_printf(buf, ", %.*s", C0_SFMT(field_name));
 			c0_printf(buf, ")");
 		}
 		return;
 
 	case C0Instr_call:
 		C0_ASSERT(instr->call_proc);
-		c0_printf(buf, "%.*s", C0PSTR(instr->call_proc->name));
+		c0_printf(buf, "%.*s", C0_SFMT(instr->call_proc->name));
 		break;
 
 	default:
@@ -427,7 +427,7 @@ static void c0_print_instr(C0Array(u8) *buf, const C0Instr *instr, usize indent,
 	// }
 
 	if (instr->kind == C0Instr_label) {
-		c0_printf(buf, "%.*s:;\n", C0PSTR(instr->name));
+		c0_printf(buf, "%.*s:;\n", C0_SFMT(instr->name));
 		return;
 	}
 	if (!ignore_first_identation) {
@@ -458,7 +458,7 @@ static void c0_print_instr(C0Array(u8) *buf, const C0Instr *instr, usize indent,
 	case C0Instr_goto:
 		C0_ASSERT(c0_array_len(instr->args) == 1);
 		C0_ASSERT(instr->args[0]->kind == C0Instr_label);
-		c0_printf(buf, "goto %.*s;\n", C0PSTR(instr->args[0]->name));
+		c0_printf(buf, "goto %.*s;\n", C0_SFMT(instr->args[0]->name));
 		return;
 
 	case C0Instr_if:
@@ -854,8 +854,8 @@ static void c0_gen_instructions_print(C0Array(u8) *buf, const C0Gen *gen) {
 }
 
 static void c0_print_proc(C0Array(u8) *buf, const C0Proc *procedure) {
-	const C0String cdecl = c0_type_to_cdecl_internal(procedure->sig, procedure->name, true);
-	c0_printf(buf, "%.*s {\n", C0PSTR(cdecl));
+	const C0String cdecl = c0_type_to_cdecl(procedure->sig, procedure->name, true);
+	c0_printf(buf, "%.*s {\n", C0_SFMT(cdecl));
 	const usize n_instrs = c0_array_len(procedure->instrs);
 	for (usize i = 0; i < n_instrs; i++) {
 		c0_print_instr(buf, procedure->instrs[i], 1, false);
@@ -874,6 +874,6 @@ static C0Array(u8) emit(const C0Gen *gen) {
 }
 
 const C0Backend C0_BACKEND_C = {
-	C0STR("C"),
+	C0_SLIT("C"),
 	emit,
 };

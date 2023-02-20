@@ -709,7 +709,7 @@ C0Instr *c0_push_unreachable(C0Proc *p) {
 }
 
 // TODO(dweiler): In c0_backend_c.c, maybe refactor cdecl to it's own package.
-C0String c0_type_to_cdecl(const C0AggType *type, C0String str);
+C0String c0_type_to_cdecl(const C0AggType *type, C0String str, bool ignore_proc_ptr);
 
 C0Instr *c0_push_return(C0Proc *p, C0Instr *arg) {
 	C0Instr *last = c0_instr_last(p);
@@ -723,12 +723,12 @@ C0Instr *c0_push_return(C0Proc *p, C0Instr *arg) {
 		C0_ASSERT(p->sig);
 		if (arg->agg_type) {
 			if (!c0_types_agg_agg(p->sig->proc.ret, arg->agg_type)) {
-				const C0String cdecl = c0_type_to_cdecl(p->sig->proc.ret, C0STR(""));
-				c0_error("mismatching types in return: expected %.*s, got %s\n", C0PSTR(cdecl), c0_basic_names[arg->basic_type]);
+				const C0String cdecl = c0_type_to_cdecl(p->sig->proc.ret, C0_SLIT(""), false);
+				c0_error("mismatching types in return: expected %.*s, got %s\n", C0_SFMT(cdecl), c0_basic_names[arg->basic_type]);
 			}
 		} else if (!c0_types_agg_basic(p->sig->proc.ret, arg->basic_type)) {
-			const C0String cdecl = c0_type_to_cdecl(p->sig->proc.ret, C0STR(""));
-			c0_error("mismatching types in return: expected %.*s, got %s\n", C0PSTR(cdecl), c0_basic_names[arg->basic_type]);
+			const C0String cdecl = c0_type_to_cdecl(p->sig->proc.ret, C0_SLIT(""), false);
+			c0_error("mismatching types in return: expected %.*s, got %s\n", C0_SFMT(cdecl), c0_basic_names[arg->basic_type]);
 		}
 		c0_alloc_args(p, ret, 1);
 		ret->args[0] = c0_use(arg);
@@ -1158,7 +1158,7 @@ C0Instr *c0_push_label(C0Proc *p, C0String name) {
 	const usize n = c0_array_len(p->labels);
 	for (usize i = 0; i < n; i++) {
 		if (!c0_string_compare(p->labels[i]->name, name)) {
-			c0_error("non-unique label names: %.*s", C0PSTR(name));
+			c0_error("non-unique label names: %.*s", C0_SFMT(name));
 		}
 	}
 	c0_array_push(p->labels, instr);
@@ -1174,7 +1174,6 @@ C0Instr *c0_push_if(C0Proc *p, C0Instr *cond) {
 
 	block->args = 0;
 	c0_array_resize(block->args, 1);
-	//block->args_len = 1;
 	block->args[0] = c0_use(cond);
 	C0_ASSERT(c0_basic_type_is_integer(cond->basic_type));
 

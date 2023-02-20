@@ -10,14 +10,14 @@ struct C0String {
 	usize len;
 };
 
-// C0String s = C0STR("Hellope");
-#ifndef C0STR
-# define C0STR(lit) C0_LIT(C0String, (lit), sizeof(lit) - 1)
+// C0String s = C0_SLIT("Hellope");
+#ifndef C0_SLIT
+#	define C0_SLIT(lit) C0_LIT(C0String, (lit), sizeof(lit) - 1)
 #endif
 
-// printf("%.*s", C0PSTR(s));
-#ifndef C0PSTR
-#define C0PSTR(s) (int)(s).len, (s).text
+// printf("%.*s", C0_SFMT(s));
+#ifndef C0_SFMT
+#	define C0_SFMT(s) (int)(s).len, (s).text
 #endif
 
 C0String c0_string_copy(C0String string);

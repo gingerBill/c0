@@ -12,9 +12,9 @@ C0Proc *test_factorial(C0Gen *gen) {
 	c0_array_push(sig_types, agg_u32);
 
 	C0Array(C0String) sig_names = NULL;
-	c0_array_push(sig_names, C0STR("n"));
+	c0_array_push(sig_names, C0_SLIT("n"));
 
-	C0Proc *p = c0_proc_create(gen, C0STR("factorial"), c0_agg_type_proc(gen, agg_u32, sig_names, sig_types, 0));
+	C0Proc *p = c0_proc_create(gen, C0_SLIT("factorial"), c0_agg_type_proc(gen, agg_u32, sig_names, sig_types, 0));
 
 	C0Instr *n = p->parameters[0];
 
@@ -40,9 +40,9 @@ C0Proc *test_fibonacci(C0Gen *gen) {
 	c0_array_push(sig_types, agg_u32);
 
 	C0Array(C0String) sig_names = NULL;
-	c0_array_push(sig_names, C0STR("n"));
+	c0_array_push(sig_names, C0_SLIT("n"));
 
-	C0Proc *p = c0_proc_create(gen, C0STR("fibonacci"), c0_agg_type_proc(gen, agg_u32, sig_names, sig_types, 0));
+	C0Proc *p = c0_proc_create(gen, C0_SLIT("fibonacci"), c0_agg_type_proc(gen, agg_u32, sig_names, sig_types, 0));
 
 	C0Instr *n = p->parameters[0];
 
@@ -79,7 +79,7 @@ int main(void) {
 	test_factorial(&gen);
 	test_fibonacci(&gen);
 
-	C0Array(u8) data = c0_emit(&gen, C0STR("C"));
+	C0Array(u8) data = c0_emit(&gen, C0_SLIT("C"));
 
 	c0_array_push(data, 0);
 
