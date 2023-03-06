@@ -1,7 +1,7 @@
 @echo off
 
 :: Make sure this is a decent name and not generic
-set lib_name=c0.a
+set exe_name=c0.exe
 
 :: Debug = 0, Release = 1
 if "%1" == "1" (
@@ -12,7 +12,8 @@ if "%1" == "1" (
 	set release_mode=0
 )
 
-set compiler_flags= -nologo -Oi -fp:precise -Gm- -MP -FC -EHsc- -GR- -GF -DC0_UNITY_BUILD
+
+set compiler_flags= -nologo -Oi -fp:precise -Gm- -MP -FC -EHsc- -GR- -GF
 set compiler_flags=%compiler_flags% -TP
 set compiler_defines=
 
@@ -29,16 +30,26 @@ set compiler_warnings= ^
 	-wd4456 -wd4457
 
 set compiler_includes= ^
-	/Ilib\
+	/Isrc\
+set libs= ^
+	kernel32.lib ^
+	Synchronization.lib
 
-set compiler_settings=-c %compiler_includes% %compiler_flags% %compiler_warnings% %compiler_defines%
+set linker_flags= -incremental:no -opt:ref -subsystem:console
+
+if %release_mode% EQU 0 ( rem Debug
+	set linker_flags=%linker_flags% -debug
+) else ( rem Release
+	set linker_flags=%linker_flags% -debug
+)
+
+set compiler_settings=%compiler_includes% %compiler_flags% %compiler_warnings% %compiler_defines%
+set linker_settings=%libs% %linker_flags%
 
 del *.pdb > NUL 2> NUL
 del *.ilk > NUL 2> NUL
 
-cl "lib\c0_unity.c" %compiler_settings% 
-lib "lib\c0_unity.o" %lib_name%
-
+cl %compiler_settings% "..\c0.a" "main.c" /link %linker_settings% -OUT:%exe_name%
 if %errorlevel% neq 0 goto end_of_build
 
 %exe_name%

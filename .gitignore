@@ -1,0 +1,9 @@
+# Ignore build directory
+.build/
+
+# Ignore built files
+*.a
+*.o
+*.Td
+*.d
+*.exe

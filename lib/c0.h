@@ -1,205 +1,15 @@
-#ifndef C0_HEADER_DEFINE
-#define C0_HEADER_DEFINE
+#ifndef C0_H
+#define C0_H
 
-#if !defined(__cplusplus)
-#include <stdalign.h>
-#endif
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
+#include "c0_array.h"
+#include "c0_string.h"
+#include "c0_assert.h"
 
-typedef uint8_t      u8;
-typedef uint16_t    u16;
-typedef uint32_t    u32;
-typedef uint64_t    u64;
-typedef size_t    usize;
-
-typedef int8_t       i8;
-typedef int16_t     i16;
-typedef int32_t     i32;
-typedef int64_t     i64;
-typedef ptrdiff_t isize;
-
-typedef float       f32;
-typedef double      f64;
-
-
-#if !defined(C0_THREAD_LOCAL)
-	#if defined(_MSC_VER) && _MSC_VER >= 1300
-		#define C0_THREAD_LOCAL __declspec(thread)
-	#elif defined(__GNUC__)
-		#define C0_THREAD_LOCAL __thread
-	#elif defined(__TSDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
-		#define C0_THREAD_LOCAL _Thread_local
-	#else
-		#define C0_THREAD_LOCAL thread_local
-	#endif
-#endif
-
-typedef struct C0String      C0String;
-typedef struct C0Allocator      C0Allocator;
-typedef struct C0Array       C0Array;
-typedef struct C0Arena       C0Arena;
-typedef struct C0MemoryBlock C0MemoryBlock;
-
-struct C0String {
-	char const *text;
-	isize       len;
-};
-
-// C0String s = C0STR("Hellope");
-#ifndef C0STR
-#if defined(__cplusplus)
-	#define C0STR(lit) (C0String{(lit), sizeof(lit)-1})
-#else
-	#define C0STR(lit) ((C0String){(lit), sizeof(lit)-1})
-#endif
-#endif
-
-#ifndef C0_DEBUG_TRAP
-	#if defined(_MSC_VER)
-	 	#if _MSC_VER < 1300
-		#define C0_DEBUG_TRAP() __asm int 3 /* Trap to debugger! */
-		#else
-		#define C0_DEBUG_TRAP() __debugbreak()
-		#endif
-	#else
-		#define C0_DEBUG_TRAP() __builtin_trap()
-	#endif
-#endif
-
-static void c0_assert_handler(char const *prefix, char const *condition, char const *file, int line, char const *msg, ...);
-
-#ifndef C0_ASSERT_MSG
-#define C0_ASSERT_MSG(cond, msg, ...) do { \
-	if (!(cond)) { \
-		c0_assert_handler("Assertion Failure", #cond, __FILE__, __LINE__, msg, ##__VA_ARGS__); \
-		C0_DEBUG_TRAP(); \
-	} \
-} while (0)
-#endif
-
-#ifndef C0_ASSERT
-#define C0_ASSERT(cond) C0_ASSERT_MSG(cond, NULL)
-#endif
-#ifndef C0_PANIC
-#define C0_PANIC(msg) C0_ASSERT_MSG(0, msg)
-#endif
-
-
-// printf("%.*s", C0PSTR(s));
-#ifndef C0PSTR
-#define C0PSTR(s) (int)(s).len, (s).text
-#endif
-
-struct C0Array {
-	alignas(2*sizeof(isize))
-	isize len;
-	isize cap;
-};
-
-#define C0Array(T) T *
-
-#define c0array_meta(array) \
-	(&((C0Array*)(array))[-1])
-
-
-#define c0array_len(array) \
-	((array) ? c0array_meta(array)->len : 0)
-
-#define c0array_cap(array) \
-	((array) ? c0array_meta(array)->cap : 0)
-
-#define c0array_try_grow(array, size_) \
-	(((array) && c0array_meta(array)->len + (size_) < c0array_meta(array)->cap) \
-		? true \
-		: c0array_grow_internal((void **)&(array), (size_), sizeof(*(array))))
-
-#define c0array_expand(array, size_) \
-	(c0array_try_grow((array), (size_)) \
-		? (c0array_meta(array)->len += (size_), true) \
-		: false)
-
-#define c0array_push(array, value) \
-	(c0array_try_grow((array), 1) \
-		? ((array)[c0array_meta(array)->len++] = (value), true) \
-		: false)
-
-#define c0array_pop(array) \
-	(c0array_len(array) > 0 \
-		? (--c0array_meta(array)->len) \
-		: 0)
-
-#define c0array_free(array) \
-	(void)((array) ? (c0array_delete(array), (array) = 0) : 0)
-
-#define c0array_insert(array, index, value) \
-	(c0array_expand(array, 1) \
-		? (memmove(&(array)[index+1], &(array)[index], (c0array_len(array) - (index) - 1) * sizeof(*(array))), (array)[index] = (value), true) \
-		: false)
-
-#define c0array_ordered_remove(array, index) do { \
-	C0_ASSERT((usize)index < (usize)c0array_len(array)); \
-	memmove(&(array)[index], &(array)[index+1], (c0array_len(array) - (index)-1) * sizeof(*(array))); \
-	c0array_meta(array)->len -= 1; \
-} while (0)
-
-#define c0array_resize(array, size_) \
-	((array) \
-		? (c0array_meta(array)->len >= (size_) \
-			? (c0array_meta(array)->len = (size_), true) \
-			: c0array_expand((array), (size_) - c0array_meta(array)->len)) \
-		: (c0array_grow_internal((void **)&(array), (size_), sizeof(*(array))) \
-			? (c0array_meta(array)->len = (size_), true) \
-			: false))
-
-#define c0array_last(array) \
-	((array)[c0array_len(array) - 1])
-
-#define c0array_clear(array) \
-	(void)((array) ? c0array_meta(array)->len = 0 : 0)
-
-bool c0array_grow_internal(void **const array, usize elements, usize type_size);
-void c0array_delete(void *const array);
-
-struct C0MemoryBlock {
-	C0MemoryBlock *prev;
-	u8 *           base;
-	usize          size;
-	usize          used;
-};
-
-struct C0Arena {
-	C0MemoryBlock *curr_block;
-	usize minimum_block_size;
-	// TODO(bill): use an arena here
-};
-
-
-void *c0_arena_alloc   (C0Arena *arena, usize min_size, usize alignment);
-void  c0_arena_free_all(C0Arena *arena);
-
-#ifndef c0_arena_new
-#define c0_arena_new(arena, T) (T *)c0_arena_alloc((arena), sizeof(T), alignof(T))
-#endif
-
-#ifndef c0_arena_new
-#define c0_arena_alloc_array(arena, T, len) (T *)c0_arena_alloc((arena), sizeof(T)*(len), alignof(T))
-#endif
-
-C0String    c0_arena_str_dup (C0Arena *arena, C0String str);
-char const *c0_arena_cstr_dup(C0Arena *arena, char const *str);
-
-
-///////
-
-
-typedef struct C0Gen     C0Gen;
-typedef struct C0Instr   C0Instr;
-typedef struct C0Proc    C0Proc;
+typedef struct C0Gen C0Gen;
+typedef struct C0Instr C0Instr;
+typedef struct C0Proc C0Proc;
 typedef struct C0AggType C0AggType;
-typedef struct C0Loc     C0Loc;
+typedef struct C0Loc C0Loc;
 
 #define C0_BASIC_TABLE \
 	C0_BASIC(void, "void",     0,  false), \
@@ -243,45 +53,6 @@ static bool const c0_basic_is_signed[C0Basic_COUNT] = {
 #undef C0_BASIC
 };
 
-static C0BasicType c0_basic_unsigned_type[C0Basic_COUNT] = {
-	C0Basic_void,
-	C0Basic_u8,
-	C0Basic_u8,
-	C0Basic_u16,
-	C0Basic_u16,
-	C0Basic_u32,
-	C0Basic_u32,
-	C0Basic_u64,
-	C0Basic_u64,
-	C0Basic_u128,
-	C0Basic_u128,
-	C0Basic_f16,
-	C0Basic_f32,
-	C0Basic_f64,
-	C0Basic_ptr,
-};
-
-static u8 c0_basic_unsigned_instr_offset[C0Basic_COUNT] = {
-	0,
-	0,
-	0,
-	1,
-	1,
-	2,
-	2,
-	3,
-	3,
-	4,
-	4,
-	5,
-	6,
-	7,
-	8,
-};
-
-
-
-
 typedef u16 C0InstrKind;
 enum C0InstrKind_enum {
 #define C0_INSTR(name, arg_type, ret_type, arg_count, symbol) C0Instr_##name,
@@ -323,6 +94,7 @@ static char const *const c0_instr_symbols[C0Instr_COUNT] = {
 };
 
 typedef u8 C0EndianKind;
+
 enum C0EndianKind_enum {
 	C0Endian_little = 0,
 	C0Endian_big    = 1,
@@ -330,7 +102,6 @@ enum C0EndianKind_enum {
 
 struct C0Gen {
 	C0String name;
-	C0Arena  arena;
 
 	i64 ptr_size;
 	C0EndianKind endian;
@@ -355,9 +126,11 @@ struct C0Loc {
 typedef u32 C0InstrFlags;
 enum C0InstrFlags_enum {
 	C0InstrFlag_print_inline = 1u<<16u,
+	C0InstrFlag_seen = 1u<<1u,
 };
 
 struct C0Instr {
+	int reg;
 	C0InstrKind  kind;
 	C0BasicType  basic_type;
 	u16          padding0;
@@ -399,8 +172,7 @@ struct C0Instr {
 		return statement
 			args[0] : return value (if exists)
 	*/
-	C0Instr **args;
-	isize     args_len;
+	C0Array(C0Instr *) args;
 
 	/*
 		block
@@ -420,17 +192,15 @@ struct C0Instr {
 };
 
 struct C0Proc {
-	C0Arena *  arena;
-	C0Gen *    gen;
-	C0String   name;
+	C0Gen *gen;
+	C0String name;
 	C0AggType *sig;
-	void *     user_data;
+	void *user_data;
 
 	C0Array(C0Instr *) parameters;
 	C0Array(C0Instr *) instrs;
 	C0Array(C0Instr *) nested_blocks;
 	C0Array(C0Instr *) labels;
-
 };
 
 typedef u32 C0AggTypeKind;
@@ -488,15 +258,45 @@ struct C0AggType {
 	};
 };
 
-void c0_platform_virtual_memory_init(void);
-
 void c0_gen_init(C0Gen *gen);
-void c0_gen_destroy(C0Gen *gen);
 
-C0Proc * c0_proc_create (C0Gen *gen, C0String name);
-C0Instr *c0_instr_create(C0Proc *p,  C0InstrKind kind);
-C0Instr *c0_instr_push  (C0Proc *p,  C0Instr *instr);
+C0Proc *c0_proc_create(C0Gen *gen, C0String name, C0AggType *sig);
+C0Proc *c0_proc_finish(C0Proc *p);
 
+C0Instr *c0_instr_create(C0Proc *p, C0InstrKind kind);
+C0Instr *c0_instr_push(C0Proc *p, C0Instr *instr);
+
+C0Instr *c0_push_if(C0Proc *p, C0Instr *cond);
+C0Instr *c0_pop_if(C0Proc *p);
+
+C0AggType *c0_agg_type_basic(C0Gen *gen, C0BasicType type);
+C0AggType *c0_agg_type_array(C0Gen *gen, C0AggType *elem, usize len);
+C0AggType *c0_agg_type_proc(C0Gen *gen, C0AggType *ret, C0Array(C0String) names, C0Array(C0AggType *) types, C0ProcFlags flags);
+
+#define C0_PUSH_BIN_INT_DEF(name) C0Instr *c0_push_##name(C0Proc *p, C0Instr *left, C0Instr *right);
+#define C0_PUSH_BIN_UINT_DEF(name) C0Instr *c0_push_##name(C0Proc *p, C0Instr *left, C0Instr *right);
+
+C0_PUSH_BIN_UINT_DEF(add);
+C0_PUSH_BIN_UINT_DEF(sub);
+C0_PUSH_BIN_UINT_DEF(mul);
+C0_PUSH_BIN_INT_DEF(quo);
+C0_PUSH_BIN_INT_DEF(rem);
+C0_PUSH_BIN_INT_DEF(shlc); // masked C-like
+C0_PUSH_BIN_INT_DEF(shrc); // masked C-like
+C0_PUSH_BIN_INT_DEF(shlo); // Odin-like
+C0_PUSH_BIN_INT_DEF(shro); // Odin-like
+C0_PUSH_BIN_UINT_DEF(and);
+C0_PUSH_BIN_UINT_DEF(or);
+C0_PUSH_BIN_UINT_DEF(xor);
+C0_PUSH_BIN_UINT_DEF(eq);
+C0_PUSH_BIN_UINT_DEF(neq);
+C0_PUSH_BIN_INT_DEF(lt);
+C0_PUSH_BIN_INT_DEF(gt);
+C0_PUSH_BIN_INT_DEF(lteq);
+C0_PUSH_BIN_INT_DEF(gteq);
+
+#undef C0_PUSH_BIN_INT_DEF
+#undef C0_PUSH_BIN_UINT_DEF
 
 C0Instr *c0_push_nested_block(C0Proc *p, C0Instr *block);
 C0Instr *c0_push_basic_i8(C0Proc *p, i8 value);
@@ -528,6 +328,7 @@ C0Instr *c0_push_atomic_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src);
 C0Instr *c0_push_atomic_cas(C0Proc *p, C0Instr *obj, C0Instr *expected, C0Instr *desired);
 C0Instr *c0_push_atomic_bin(C0Proc *p, C0InstrKind kind, C0Instr *dst, C0Instr *src);
 
+C0Instr *c0_push_call_proc1(C0Proc *p, C0Proc *call_proc, C0Instr *arg0);
 C0Instr *c0_push_memmove(C0Proc *p, C0Instr *dst, C0Instr *src, C0Instr *size);
 C0Instr *c0_push_memset(C0Proc *p, C0Instr *dst, u8 val, C0Instr *size);
 C0Instr *c0_push_decl_basic(C0Proc *p, C0BasicType type, C0String name);
@@ -536,7 +337,6 @@ C0Instr *c0_push_continue(C0Proc *p);
 C0Instr *c0_push_break(C0Proc *p);
 C0Instr *c0_push_goto(C0Proc *p, C0Instr *label);
 C0Instr *c0_push_label(C0Proc *p, C0String name);
-C0Instr *c0_push_if(C0Proc *p, C0Instr *cond);
 C0Instr *c0_push_loop(C0Proc *p);
 
-#endif /*C0_HEADER_DEFINE*/
+#endif // C0_H

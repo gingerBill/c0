@@ -1,365 +1,44 @@
-#include "c0.h"
 #include <stdlib.h>
 
-#if !defined(C0_NO_WINDOWS_H)
-	#define NOMINMAX            1
-	#if !defined(C0_WINDOWS_H_INCLUDED)
-	#define WIN32_LEAN_AND_MEAN 1
-	#define WIN32_MEAN_AND_LEAN 1
-	#define VC_EXTRALEAN        1
-	#endif
-	#include <windows.h>
-	#undef NOMINMAX
-	#if !defined(C0_WINDOWS_H_INCLUDED)
-	#undef WIN32_LEAN_AND_MEAN
-	#undef WIN32_MEAN_AND_LEAN
-	#undef VC_EXTRALEAN
-	#endif
-#endif
+#include "c0.h"
+#include "c0_logger.h"
+#include "c0_allocator.h"
 
-#if defined(__cplusplus)
-	#include <atomic>
-	#define C0Atomic(T) std::atomic<T>
-	#define c0_atomic_fetch_add(ptr, x) (ptr)->fetch_add((x))
-	#define c0_atomic_fetch_sub(ptr, x) (ptr)->fetch_sub((x))
-	#define c0_atomic_load(ptr)         (ptr)->load()
-	#define c0_atomic_store(ptr, x)     (ptr)->store((x))
-#else
-	#define C0Atomic(T) _Atomic T
-	#define c0_atomic_fetch_add(ptr, x) atomic_fetch_add((ptr), (x))
-	#define c0_atomic_fetch_sub(ptr, x) atomic_fetch_sub((ptr), (x))
-	#define c0_atomic_load(ptr)         atomic_load((ptr))
-	#define c0_atomic_store(ptr, x)     atomic_store((ptr), (x))
-#endif
-
-void c0_assert_handler(char const *prefix, char const *condition, char const *file, int line, char const *msg, ...) {
-	fprintf(stderr, "%s(%d): %s: ", file, line, prefix);
-	if (condition)
-		fprintf(stderr,  "`%s` ", condition);
-	if (msg) {
-		va_list va;
-		va_start(va, msg);
-		vfprintf(stderr, msg, va);
-		va_end(va);
-	}
-	fprintf(stderr, "\n");
-}
-
-
-void *c0_heap_calloc(isize elem_size, isize count) {
-	C0_ASSERT(elem_size > 0);
-	if (count == 0) {
-		return NULL;
-	}
-	C0_ASSERT(count > 0);
-	void *ptr = calloc(elem_size, count);
-	C0_ASSERT(ptr);
-	return ptr;
-}
-void *c0_heap_alloc(isize size) {
-	C0_ASSERT(size >= 0);
-	return c0_heap_calloc(1, size);
-}
-void c0_heap_free(void *ptr) {
-	if (ptr) {
-		free(ptr);
-	}
-}
-void *c0_heap_resize(void *ptr, isize size) {
-	if (ptr == NULL) {
-		return c0_heap_alloc(size);
-	} else if (size == 0) {
-		c0_heap_free(ptr);
-		return NULL;
-	}
-	C0_ASSERT(size > 0);
-	return realloc(ptr, size);
-}
-
-bool c0array_grow_internal(void **const array, usize elements, usize type_size) {
-	usize count = 0;
-	void *data = 0;
-	if (*array) {
-		C0Array *const meta = c0array_meta(*array);
-		count = 2 * meta->cap + elements;
-		data = c0_heap_resize(meta, type_size * count + sizeof(*meta));
-		if (!data) {
-			c0_heap_free(meta);
-			return false;
-		}
-	} else {
-		count = elements + 1;
-		data = c0_heap_alloc(type_size * count + sizeof(C0Array));
-		if (!data) {
-			return false;
-		}
-		((C0Array *)data)->len = 0;
-	}
-	C0Array *meta = (C0Array *)data;
-	meta->cap = count;
-	*array = meta + 1;
-	return true;
-}
-void c0array_delete(void *const array) {
-	if (array) {
-		c0_heap_free(c0array_meta(array));
-	}
-}
-
-
-C0String c0_arena_str_dup(C0Arena *arena, C0String str) {
-	char *text = NULL;
-	if (str.len) {
-		text = (char *)c0_arena_alloc(arena, str.len, 1);
-		memcpy(text, str.text, str.len);
-	}
-	C0String res;
-	res.text = text;
-	res.len = str.len;
-	return res;
-}
-char const *c0_arena_cstr_dup(C0Arena *arena, char const *str) {
-	char *text = NULL;
-	if (str) {
-		usize len = strlen(str);
-		text = (char *)c0_arena_alloc(arena, len+1, 1);
-		memcpy(text, str, len);
-		text[len] = 0;
-	}
-	return text;
-}
-
-
-static usize c0_align_formula(usize size, usize align) {
-	usize result = size + align-1;
-	return result - result%align;
-}
-
-enum { C0_DEFAULT_MINIMUM_BLOCK_SIZE = 8ll*1024ll*1024ll };
-
-static usize DEFAULT_PAGE_SIZE = 4096;
-
-static C0MemoryBlock *c0_virtual_memory_alloc(usize size);
-static void c0_virtual_memory_dealloc(C0MemoryBlock *block);
-
-
-static usize arena_align_forward_offset(C0Arena *arena, usize alignment) {
-	usize alignment_offset = 0;
-	usize ptr = (usize)(arena->curr_block->base + arena->curr_block->used);
-	usize mask = alignment-1;
-	if (ptr & mask) {
-		alignment_offset = alignment - (ptr & mask);
-	}
-	return alignment_offset;
-}
-
-void *c0_arena_alloc(C0Arena *arena, usize min_size, usize alignment) {
-	// mutex_lock(&arena->mutex);
-
-	usize size = 0;
-	if (arena->curr_block != NULL) {
-		size = min_size + arena_align_forward_offset(arena, alignment);
-	}
-
-	if (arena->curr_block == NULL || (arena->curr_block->used + size) > arena->curr_block->size) {
-		size = c0_align_formula(min_size, alignment);
-		if (arena->minimum_block_size < C0_DEFAULT_MINIMUM_BLOCK_SIZE) {
-			arena->minimum_block_size = C0_DEFAULT_MINIMUM_BLOCK_SIZE;
-		}
-
-		usize block_size = size;
-		if (block_size < arena->minimum_block_size) {
-			block_size = arena->minimum_block_size;
-		}
-
-		C0MemoryBlock *new_block = c0_virtual_memory_alloc(block_size);
-		new_block->prev = arena->curr_block;
-		arena->curr_block = new_block;
-	}
-
-	C0MemoryBlock *curr_block = arena->curr_block;
-	C0_ASSERT((curr_block->used + size) <= curr_block->size);
-
-	u8 *ptr = curr_block->base + curr_block->used;
-	ptr += arena_align_forward_offset(arena, alignment);
-
-	curr_block->used += size;
-	C0_ASSERT(curr_block->used <= curr_block->size);
-
-	// mutex_unlock(&arena->mutex);
-
-	// NOTE(bill): memory will be zeroed by default due to virtual memory
-	return ptr;
-}
-
-void arena_free_all(C0Arena *arena) {
-	while (arena->curr_block != NULL) {
-		C0MemoryBlock *free_block = arena->curr_block;
-		arena->curr_block = free_block->prev;
-		c0_virtual_memory_dealloc(free_block);
-	}
-}
-
-
-struct C0PlatformMemoryBlock {
-	C0MemoryBlock block; // IMPORTANT NOTE: must be at the start
-	usize total_size;
-	C0PlatformMemoryBlock *prev, *next;
+const C0BasicType c0_basic_unsigned_type[C0Basic_COUNT] = {
+	C0Basic_void,
+	C0Basic_u8,
+	C0Basic_u8,
+	C0Basic_u16,
+	C0Basic_u16,
+	C0Basic_u32,
+	C0Basic_u32,
+	C0Basic_u64,
+	C0Basic_u64,
+	C0Basic_u128,
+	C0Basic_u128,
+	C0Basic_f16,
+	C0Basic_f32,
+	C0Basic_f64,
+	C0Basic_ptr,
 };
 
-
-static C0Atomic(usize) c0_global_platform_memory_total_usage;
-static C0PlatformMemoryBlock c0_global_platform_memory_block_sentinel;
-
-static C0PlatformMemoryBlock *c0_platform_virtual_memory_alloc(isize total_size);
-static void c0_platform_virtual_memory_free(C0PlatformMemoryBlock *block);
-static void c0_platform_virtual_memory_protect(void *memory, isize size);
-
-#if defined(_WIN32)
-	void c0_platform_virtual_memory_init(void) {
-		c0_global_platform_memory_block_sentinel.prev = &c0_global_platform_memory_block_sentinel;
-		c0_global_platform_memory_block_sentinel.next = &c0_global_platform_memory_block_sentinel;
-
-		SYSTEM_INFO sys_info = {0};
-		GetSystemInfo(&sys_info);
-		usize sys_page_size = sys_info.dwPageSize;
-		if (DEFAULT_PAGE_SIZE < sys_page_size) {
-			DEFAULT_PAGE_SIZE = sys_page_size;
-		}
-	}
-
-	static C0PlatformMemoryBlock *c0_platform_virtual_memory_alloc(usize total_size) {
-		C0PlatformMemoryBlock *pmblock = (C0PlatformMemoryBlock *)VirtualAlloc(0, total_size, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-		if (pmblock == NULL) {
-			fprintf(stderr, "Out of Virtual memory, oh no...\n");
-			fprintf(stderr, "Requested: %llu bytes\n", (unsigned long long)total_size);
-			fprintf(stderr, "Total Usage: %llu bytes\n", (unsigned long long)c0_global_platform_memory_total_usage);
-			C0_ASSERT(pmblock != NULL && "Out of Virtual Memory, oh no...");
-		}
-		c0_global_platform_memory_total_usage += total_size; // @atomic
-		return pmblock;
-	}
-	static void c0_platform_virtual_memory_free(C0PlatformMemoryBlock *block) {
-		c0_global_platform_memory_total_usage -= block->total_size; // @atomic
-		C0_ASSERT(VirtualFree(block, 0, MEM_RELEASE));
-	}
-	static void c0_platform_virtual_memory_protect(void *memory, isize size) {
-		DWORD old_protect = 0;
-		BOOL is_protected = VirtualProtect(memory, size, PAGE_NOACCESS, &old_protect);
-		C0_ASSERT(is_protected);
-	}
-#else
-	static void c0_platform_virtual_memory_init(void) {
-		c0_global_platform_memory_block_sentinel.prev = &c0_global_platform_memory_block_sentinel;
-		c0_global_platform_memory_block_sentinel.next = &c0_global_platform_memory_block_sentinel;
-
-		usize sys_page_size = sysconf(_SC_PAGE_SIZE);
-		if (DEFAULT_PAGE_SIZE < sys_page_size) {
-			DEFAULT_PAGE_SIZE = sys_page_size;
-		}
-	}
-
-	static C0PlatformMemoryBlock *c0_platform_virtual_memory_alloc(isize total_size) {
-		C0PlatformMemoryBlock *pmblock = (C0PlatformMemoryBlock *)mmap(NULL, total_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-		if (pmblock == NULL) {
-			fprintf(stderr, "Out of Virtual memory, oh no...\n");
-			fprintf(stderr, "Requested: %lld bytes\n", (long long)total_size);
-			fprintf(stderr, "Total Usage: %lld bytes\n", (long long)c0_global_platform_memory_total_usage);
-			C0_ASSERT(pmblock != NULL, "Out of Virtual Memory, oh no...");
-		}
-		c0_global_platform_memory_total_usage += total_size;
-		return pmblock;
-	}
-	static void c0_platform_virtual_memory_free(C0PlatformMemoryBlock *block) {
-		isize size = block->total_size;
-		c0_global_platform_memory_total_usage -= size;
-		munmap(block, size);
-	}
-	static void c0_platform_virtual_memory_protect(void *memory, isize size) {
-		int err = mprotect(memory, size, PROT_NONE);
-		C0_ASSERT(err == 0);
-	}
-#endif
-
-static C0MemoryBlock *c0_virtual_memory_alloc(usize size) {
-	usize const page_size = DEFAULT_PAGE_SIZE;
-
-	usize total_size     = size + sizeof(C0PlatformMemoryBlock);
-	usize base_offset    = sizeof(C0PlatformMemoryBlock);
-	usize protect_offset = 0;
-
-	bool do_protection = false;
-	{ // overflow protection
-		usize rounded_size = c0_align_formula(size, page_size);
-		total_size     = rounded_size + 2*page_size;
-		base_offset    = page_size + rounded_size - size;
-		protect_offset = page_size + rounded_size;
-		do_protection  = true;
-	}
-
-	C0PlatformMemoryBlock *pmblock = c0_platform_virtual_memory_alloc(total_size);
-	C0_ASSERT(pmblock != NULL && "Out of Virtual Memory, oh no...");
-
-	pmblock->block.base = (u8 *)pmblock + base_offset;
-	// Should be zeroed
-	C0_ASSERT(pmblock->block.used == 0);
-	C0_ASSERT(pmblock->block.prev == NULL);
-
-	if (do_protection) {
-		c0_platform_virtual_memory_protect((u8 *)pmblock + protect_offset, page_size);
-	}
-
-	pmblock->block.size = size;
-	pmblock->total_size = total_size;
-
-	C0PlatformMemoryBlock *sentinel = &c0_global_platform_memory_block_sentinel;
-	// mutex_lock(&global_memory_block_mutex);
-	pmblock->next = sentinel;
-	pmblock->prev = sentinel->prev;
-	pmblock->prev->next = pmblock;
-	pmblock->next->prev = pmblock;
-	// mutex_unlock(&global_memory_block_mutex);
-
-	return &pmblock->block;
-}
-
-static void c0_virtual_memory_dealloc(C0MemoryBlock *block_to_free) {
-	C0PlatformMemoryBlock *block = (C0PlatformMemoryBlock *)block_to_free;
-	if (block != NULL) {
-		// mutex_lock(&global_memory_block_mutex);
-		block->prev->next = block->next;
-		block->next->prev = block->prev;
-		// mutex_unlock(&global_memory_block_mutex);
-
-		c0_platform_virtual_memory_free(block);
-	}
-}
-
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-
-static char *c0_type_to_cdecl(C0Arena *a, C0AggType *type, char const *str);
-
-static void c0_warning(char const *msg) {
-	fputs("WARNING: ", stderr);
-	fputs(msg, stderr);
-	fputs("\n", stderr);
-}
-
-
-static void c0_errorf(char const *fmt, ...) {
-	fputs("ERROR: ", stderr);
-	va_list va;
-	va_start(va, fmt);
-	vfprintf(stderr, fmt, va);
-	va_end(va);
-	fputs("\n", stderr);
-	C0_DEBUG_TRAP();
-}
+static const u8 c0_basic_unsigned_instr_offset[C0Basic_COUNT] = {
+	0,
+	0,
+	0,
+	1,
+	1,
+	2,
+	2,
+	3,
+	3,
+	4,
+	4,
+	5,
+	6,
+	7,
+	8,
+};
 
 i64 c0_basic_type_size(C0Gen *gen, C0BasicType type) {
 	i64 size = c0_basic_type_sizes[type];
@@ -374,17 +53,13 @@ void c0_gen_init(C0Gen *gen) {
 
 	gen->ptr_size = 8;
 	for (C0BasicType kind = C0Basic_void; kind < C0Basic_COUNT; kind++) {
-		C0AggType *t = c0_arena_new(&gen->arena, C0AggType);
+		C0AggType *t = c0_new(C0AggType);
 		t->kind = C0AggType_basic;
 		t->basic.type = kind;
 		t->size  = c0_basic_type_size(gen, kind);
 		t->align = t->size;
 		gen->basic_agg[kind] = t;
 	}
-}
-
-void c0_gen_destroy(C0Gen *gen) {
-	arena_free_all(&gen->arena);
 }
 
 bool c0_basic_type_is_integer(C0BasicType type) {
@@ -409,6 +84,7 @@ bool c0_basic_type_is_integer(C0BasicType type) {
 	}
 	return false;
 }
+
 bool c0_basic_type_is_float(C0BasicType type) {
 	switch (type) {
 	case C0Basic_i8:
@@ -431,6 +107,7 @@ bool c0_basic_type_is_float(C0BasicType type) {
 	}
 	return false;
 }
+
 bool c0_basic_type_is_ptr(C0BasicType type) {
 	switch (type) {
 	case C0Basic_i8:
@@ -454,27 +131,25 @@ bool c0_basic_type_is_ptr(C0BasicType type) {
 	return false;
 }
 
-
-
-
 C0AggType *c0_agg_type_basic(C0Gen *gen, C0BasicType type) {
 	return gen->basic_agg[type];
 }
 
-C0AggType *c0_agg_type_array(C0Gen *gen, C0AggType *elem, i64 len) {
-	C0_ASSERT(len >= 0);
-	C0AggType *t = c0_arena_new(&gen->arena, C0AggType);
+C0AggType *c0_agg_type_array(C0Gen *gen, C0AggType *elem, usize len) {
+	(void)gen;
+	C0_ASSERT(len);
+	C0AggType *t = c0_new(C0AggType);
 	t->kind = C0AggType_array;
 	t->array.elem = elem;
 	t->array.len = len;
 	// TODO(bill): size of the array
-	t->size  = len * elem->size;
+	t->size = len * elem->size;
 	t->align = elem->align;
 	return t;
 }
 
 C0AggType *c0_agg_type_proc(C0Gen *gen, C0AggType *ret, C0Array(C0String) names, C0Array(C0AggType *) types, C0ProcFlags flags) {
-	C0AggType *t = c0_arena_new(&gen->arena, C0AggType);
+	C0AggType *t = c0_new(C0AggType);
 	t->kind = C0AggType_proc;
 	t->size = gen->ptr_size;
 	t->align = gen->ptr_size;
@@ -488,16 +163,17 @@ C0AggType *c0_agg_type_proc(C0Gen *gen, C0AggType *ret, C0Array(C0String) names,
 	t->proc.flags = flags;
 	return t;
 }
+
 static bool c0_types_equal(C0AggType *a, C0AggType *b);
 
 static bool c0_types_array_equal(C0Array(C0AggType *) a, C0Array(C0AggType *) b) {
 	if (a == b) {
 		return true;
 	}
-	if (c0array_len(a) != c0array_len(b)) {
+	if (c0_array_len(a) != c0_array_len(b)) {
 		return false;
 	}
-	usize n = c0array_len(a);
+	const usize n = c0_array_len(a);
 	for (usize i = 0; i < n; i++) {
 		if (!c0_types_equal(a[i], b[i])) {
 			return false;
@@ -505,33 +181,6 @@ static bool c0_types_array_equal(C0Array(C0AggType *) a, C0Array(C0AggType *) b)
 	}
 	return true;
 }
-
-static bool c0_strings_equal(C0String a, C0String b) {
-	if (a.len != b.len) {
-		return false;
-	}
-	if (a.text == b.text) {
-		return true;
-	}
-	return memcmp(a.text, b.text, a.len) == 0;
-}
-
-static bool c0_string_array_equal(C0Array(C0String) a, C0Array(C0String) b) {
-	if (a == b) {
-		return true;
-	}
-	if (c0array_len(a) != c0array_len(b)) {
-		return false;
-	}
-	usize n = c0array_len(a);
-	for (usize i = 0; i < n; i++) {
-		if (!c0_strings_equal(a[i], b[i])) {
-			return false;
-		}
-	}
-	return true;
-}
-
 
 static bool c0_types_equal(C0AggType *a, C0AggType *b) {
 	if (a == b) {
@@ -544,7 +193,7 @@ static bool c0_types_equal(C0AggType *a, C0AggType *b) {
 		case C0AggType_array:
 			return a->array.len == b->array.len && a->array.elem == b->array.elem;
 		case C0AggType_record:
-			return c0_strings_equal(a->record.name, b->record.name);
+			return c0_string_compare(a->record.name, b->record.name);
 		case C0AggType_proc:
 			return c0_types_equal(a->proc.ret, b->proc.ret) &&
 			       c0_types_array_equal(a->proc.types, b->proc.types) &&
@@ -580,23 +229,22 @@ static bool c0_types_agg_agg(C0AggType *a, C0AggType *b) {
 	return true;
 }
 
-
-
 C0Proc *c0_proc_create(C0Gen *gen, C0String name, C0AggType *sig) {
-	C0Arena *arena = &gen->arena;
-	C0Proc *p = c0_arena_new(arena, C0Proc);
-	C0_ASSERT(p);
-	p->gen = gen;
-	p->arena = arena;
-	p->name  = c0_arena_str_dup(p->arena, name);
 	C0_ASSERT(sig && sig->kind == C0AggType_proc);
+
+	C0Proc *p = c0_new(C0Proc);
+	C0_ASSERT(p);
+
+	p->gen = gen;
+	p->name = c0_string_copy(name);
 	p->sig = sig;
 
-	isize n = c0array_len(sig->proc.names);
+	const usize n = c0_array_len(sig->proc.names);
 	if (n) {
-		C0_ASSERT(n == c0array_len(sig->proc.types));
+		C0_ASSERT(n == c0_array_len(sig->proc.types));
 	}
-	for (isize i = 0; i < n; i++) {
+	
+	for (usize i = 0; i < n; i++) {
 		C0AggType *type = sig->proc.types[i];
 		C0String name = sig->proc.names[i];
 		if (name.len > 0) {
@@ -608,28 +256,35 @@ C0Proc *c0_proc_create(C0Gen *gen, C0String name, C0AggType *sig) {
 				instr->agg_type = type;
 			}
 
-			c0array_push(p->parameters, instr);
+			c0_array_push(p->parameters, instr);
 		}
 	}
 
+	c0_array_push(gen->procs, p);
+
 	return p;
 }
+
 C0Instr *c0_instr_create(C0Proc *p, C0InstrKind kind) {
-	C0Instr *instr = c0_arena_new(p->arena, C0Instr);
+	(void)p;
+	C0Instr *instr = c0_new(C0Instr);
 	instr->kind = kind;
 	instr->basic_type = c0_instr_ret_type[kind];
+	instr->uses = 0;
 	return instr;
 }
+
 C0Instr *c0_instr_last(C0Proc *p) {
+	(void)p;
 	C0Array(C0Instr *) instrs = NULL;
-	usize n = c0array_len(p->nested_blocks);
-	if (n > 0) {
+	const usize n = c0_array_len(p->nested_blocks);
+	if (n) {
 		instrs = p->nested_blocks[n-1]->nested_instrs;
 	} else {
 		instrs = p->instrs;
 	}
-	if (c0array_len(instrs) > 0) {
-		return c0array_last(instrs);
+	if (c0_array_len(instrs) > 0) {
+		return c0_array_last(instrs);
 	}
 	return NULL;
 }
@@ -647,7 +302,7 @@ static bool c0_is_instruction_any_break(C0Instr *instr, u32 loop_count) {
 			return false;
 		}
 
-		usize len = c0array_len(instr->nested_instrs);
+		const usize len = c0_array_len(instr->nested_instrs);
 		for (usize i = 0; i < len; i++) {
 			if (c0_is_instruction_any_break(instr->nested_instrs[i], loop_count)) {
 				return true;
@@ -666,33 +321,33 @@ static bool c0_is_instruction_terminating(C0Instr *instr) {
 	} else if (instr->kind == C0Instr_unreachable) {
 		return true;
 	} else if (instr->kind == C0Instr_if) {
-		if (instr->args_len != 2) {
+		if (c0_array_len(instr->args) != 2) {
 			return false;
 		}
 		bool terminating_if   = false;
 		bool terminating_else = false;
-		if (c0array_len(instr->nested_instrs) == 0) {
+		if (c0_array_len(instr->nested_instrs) == 0) {
 			return false;
 		}
-		C0Instr *last_if = c0array_last(instr->nested_instrs);
+		C0Instr *last_if = c0_array_last(instr->nested_instrs);
 		terminating_if = c0_is_instruction_terminating(last_if);
 		terminating_else = c0_is_instruction_terminating(instr->args[1]);
 
 		return terminating_if && terminating_else;
 	} else if (instr->kind == C0Instr_block) {
-		if (c0array_len(instr->nested_instrs) == 0) {
+		if (c0_array_len(instr->nested_instrs) == 0) {
 			return false;
 		}
-		C0Instr *last = c0array_last(instr->nested_instrs);
+		C0Instr *last = c0_array_last(instr->nested_instrs);
 		return c0_is_instruction_terminating(last);
 	} else if (instr->kind == C0Instr_loop) {
-		if (c0array_len(instr->nested_instrs) == 0) {
+		if (c0_array_len(instr->nested_instrs) == 0) {
 			return true;
 		}
 		if (c0_is_instruction_any_break(instr, 0)) {
 			return false;
 		}
-		C0Instr *last = c0array_last(instr->nested_instrs);
+		C0Instr *last = c0_array_last(instr->nested_instrs);
 		return c0_is_instruction_terminating(last);
 	}
 	return false;
@@ -701,18 +356,17 @@ static bool c0_is_instruction_terminating(C0Instr *instr) {
 C0Instr *c0_instr_push(C0Proc *p, C0Instr *instr) {
 	if (c0_is_instruction_terminating(c0_instr_last(p))) {
 		c0_warning("next instruction will never be executed");
-		return NULL;
+		return instr;
 	}
 
-	usize n = c0array_len(p->nested_blocks);
-	if (n > 0) {
-		c0array_push(p->nested_blocks[n-1]->nested_instrs, instr);
+	const usize n = c0_array_len(p->nested_blocks);
+	if (n) {
+		c0_array_push(p->nested_blocks[n-1]->nested_instrs, instr);
 	} else {
-		c0array_push(p->instrs, instr);
+		c0_array_push(p->instrs, instr);
 	}
 	return instr;
 }
-
 
 C0Instr *c0_push_nested_block(C0Proc *p, C0Instr *block) {
 	C0_ASSERT(block);
@@ -722,26 +376,26 @@ C0Instr *c0_push_nested_block(C0Proc *p, C0Instr *block) {
 	case C0Instr_block:
 		break;
 	default:
-		c0_errorf("invalid block kind");
+		c0_error("invalid block kind");
 		break;
 	}
-	c0array_push(p->nested_blocks, block);
+	c0_array_push(p->nested_blocks, block);
 	return block;
 }
 
 C0Instr *c0_pop_nested_block(C0Proc *p) {
-	usize n = c0array_len(p->nested_blocks);
-	C0_ASSERT(n > 0);
+	const usize n = c0_array_len(p->nested_blocks);
+	C0_ASSERT(n);
 	C0Instr *block = p->nested_blocks[n-1];
-	c0array_pop(p->nested_blocks);
+	c0_array_pop(p->nested_blocks);
 	return block;
 }
-
 
 C0Instr *c0_use(C0Instr *instr) {
 	instr->uses++;
 	return instr;
 }
+
 C0Instr *c0_unuse(C0Instr *instr) {
 	C0_ASSERT(instr->uses > 0);
 	instr->uses--;
@@ -754,6 +408,7 @@ C0Instr *c0_push_basic_i8(C0Proc *p, i8 value) {
 	val->value_i64 = (i64)value;
 	return c0_instr_push(p, val);
 }
+
 C0Instr *c0_push_basic_u8(C0Proc *p, u8 value) {
 	C0Instr *val = c0_instr_create(p, C0Instr_decl);
 	val->basic_type = C0Basic_u8;
@@ -767,6 +422,7 @@ C0Instr *c0_push_basic_i16(C0Proc *p, i16 value) {
 	val->value_i64 = (i64)value;
 	return c0_instr_push(p, val);
 }
+
 C0Instr *c0_push_basic_u16(C0Proc *p, u16 value) {
 	C0Instr *val = c0_instr_create(p, C0Instr_decl);
 	val->basic_type = C0Basic_u32;
@@ -780,6 +436,7 @@ C0Instr *c0_push_basic_i32(C0Proc *p, i32 value) {
 	val->value_i64 = (i64)value;
 	return c0_instr_push(p, val);
 }
+
 C0Instr *c0_push_basic_u32(C0Proc *p, u32 value) {
 	C0Instr *val = c0_instr_create(p, C0Instr_decl);
 	val->basic_type = C0Basic_u32;
@@ -793,6 +450,7 @@ C0Instr *c0_push_basic_i64(C0Proc *p, i64 value) {
 	val->value_i64 = (i64)value;
 	return c0_instr_push(p, val);
 }
+
 C0Instr *c0_push_basic_u64(C0Proc *p, u64 value) {
 	C0Instr *val = c0_instr_create(p, C0Instr_decl);
 	val->basic_type = C0Basic_u64;
@@ -808,21 +466,19 @@ C0Instr *c0_push_basic_ptr(C0Proc *p, u64 value) {
 }
 
 
-static void c0_alloc_args(C0Proc *p, C0Instr *instr, isize len) {
-	typedef C0Instr *T;
-	instr->args_len = len;
-	if (len != 0) {
-		instr->args = (T *)c0_arena_alloc(p->arena, sizeof(T)*len, alignof(T));
-	}
-
+static void c0_alloc_args(C0Proc *p, C0Instr *instr, usize len) {
+	(void)p;
+	instr->args = 0;
+	c0_array_resize(instr->args, len);
 }
 
 C0Instr *c0_push_bin(C0Proc *p, C0InstrKind kind, C0BasicType type, C0Instr *left, C0Instr *right) {
+	(void)p;
+
 	C0_ASSERT(left);
 	C0_ASSERT(right);
 	C0_ASSERT(type != C0Basic_void);
-	C0_ASSERT_MSG(c0_basic_unsigned_type[left->basic_type] == c0_basic_unsigned_type[right->basic_type],
-	              "%s != %s", c0_basic_names[left->basic_type], c0_basic_names[right->basic_type]);
+	C0_ASSERT(c0_basic_unsigned_type[left->basic_type] == c0_basic_unsigned_type[right->basic_type]);
 
 	C0Instr *bin = c0_instr_create(p, kind);
 	if (type != left->basic_type) {
@@ -919,7 +575,6 @@ C0_PUSH_UN_UINT_DEF(popcnt);
 }
 
 C0_PUSH_UN_FLOAT_DEF(absf);
-C0_PUSH_UN_FLOAT_DEF(negf);
 C0_PUSH_UN_FLOAT_DEF(ceilf);
 C0_PUSH_UN_FLOAT_DEF(floorf);
 C0_PUSH_UN_FLOAT_DEF(nearestf);
@@ -933,20 +588,36 @@ C0_PUSH_UN_FLOAT_DEF(sqrtf);
 C0Instr *c0_push_noti(C0Proc *p, C0Instr *arg) {
 	C0Instr *zero = NULL;
 	switch (arg->basic_type) {
-	case C0Basic_i8:  zero = c0_push_basic_i8(p, 0);
-	case C0Basic_u8:  zero = c0_push_basic_u8(p, 0);
-	case C0Basic_i16: zero = c0_push_basic_i16(p, 0);
-	case C0Basic_u16: zero = c0_push_basic_u16(p, 0);
-	case C0Basic_i32: zero = c0_push_basic_i32(p, 0);
-	case C0Basic_u32: zero = c0_push_basic_u32(p, 0);
-	case C0Basic_i64: zero = c0_push_basic_i64(p, 0);
-	case C0Basic_u64: zero = c0_push_basic_u64(p, 0);
+	case C0Basic_i8: 
+		zero = c0_push_basic_i8(p, 0);
+		break;
+	case C0Basic_u8: 
+		zero = c0_push_basic_u8(p, 0);
+		break;
+	case C0Basic_i16:
+		zero = c0_push_basic_i16(p, 0);
+		break;
+	case C0Basic_u16:
+		zero = c0_push_basic_u16(p, 0);
+		break;
+	case C0Basic_i32:
+		zero = c0_push_basic_i32(p, 0);
+		break;
+	case C0Basic_u32:
+		zero = c0_push_basic_u32(p, 0);
+		break;
+	case C0Basic_i64:
+		zero = c0_push_basic_i64(p, 0);
+		break;
+	case C0Basic_u64:
+		zero = c0_push_basic_u64(p, 0);
+		break;
 	case C0Basic_i128:
 	case C0Basic_u128:
-		c0_errorf("todo 128 bit integers");
+		c0_error("todo 128 bit integers");
 		break;
 	default:
-		c0_errorf("invalid type to noti");
+		c0_error("invalid type to noti");
 		break;
 	}
 	return c0_push_xor(p, arg, zero);
@@ -956,20 +627,36 @@ C0Instr *c0_push_noti(C0Proc *p, C0Instr *arg) {
 C0Instr *c0_push_notb(C0Proc *p, C0Instr *arg) {
 	C0Instr *zero = NULL;
 	switch (arg->basic_type) {
-	case C0Basic_i8:  zero = c0_push_basic_i8(p, 0);
-	case C0Basic_u8:  zero = c0_push_basic_u8(p, 0);
-	case C0Basic_i16: zero = c0_push_basic_i16(p, 0);
-	case C0Basic_u16: zero = c0_push_basic_u16(p, 0);
-	case C0Basic_i32: zero = c0_push_basic_i32(p, 0);
-	case C0Basic_u32: zero = c0_push_basic_u32(p, 0);
-	case C0Basic_i64: zero = c0_push_basic_i64(p, 0);
-	case C0Basic_u64: zero = c0_push_basic_u64(p, 0);
+	case C0Basic_i8: 
+		zero = c0_push_basic_i8(p, 0);
+		break;
+	case C0Basic_u8: 
+		zero = c0_push_basic_u8(p, 0);
+		break;
+	case C0Basic_i16:
+		zero = c0_push_basic_i16(p, 0);
+		break;
+	case C0Basic_u16:
+		zero = c0_push_basic_u16(p, 0);
+		break;
+	case C0Basic_i32:
+		zero = c0_push_basic_i32(p, 0);
+		break;
+	case C0Basic_u32:
+		zero = c0_push_basic_u32(p, 0);
+		break;
+	case C0Basic_i64:
+		zero = c0_push_basic_i64(p, 0);
+		break;
+	case C0Basic_u64:
+		zero = c0_push_basic_u64(p, 0);
+		break;
 	case C0Basic_i128:
 	case C0Basic_u128:
-		c0_errorf("todo 128 bit integers");
+		c0_error("todo 128 bit integers");
 		break;
 	default:
-		c0_errorf("invalid type to noti");
+		c0_error("invalid type to noti");
 		break;
 	}
 	return c0_push_eq(p, arg, zero);
@@ -979,20 +666,36 @@ C0Instr *c0_push_notb(C0Proc *p, C0Instr *arg) {
 C0Instr *c0_push_to_bool(C0Proc *p, C0Instr *arg) {
 	C0Instr *zero = NULL;
 	switch (arg->basic_type) {
-	case C0Basic_i8:  zero = c0_push_basic_i8(p, 0);
-	case C0Basic_u8:  zero = c0_push_basic_u8(p, 0);
-	case C0Basic_i16: zero = c0_push_basic_i16(p, 0);
-	case C0Basic_u16: zero = c0_push_basic_u16(p, 0);
-	case C0Basic_i32: zero = c0_push_basic_i32(p, 0);
-	case C0Basic_u32: zero = c0_push_basic_u32(p, 0);
-	case C0Basic_i64: zero = c0_push_basic_i64(p, 0);
-	case C0Basic_u64: zero = c0_push_basic_u64(p, 0);
+	case C0Basic_i8: 
+		zero = c0_push_basic_i8(p, 0);
+		break;
+	case C0Basic_u8: 
+		zero = c0_push_basic_u8(p, 0);
+		break;
+	case C0Basic_i16:
+		zero = c0_push_basic_i16(p, 0);
+		break;
+	case C0Basic_u16:
+		zero = c0_push_basic_u16(p, 0);
+		break;
+	case C0Basic_i32:
+		zero = c0_push_basic_i32(p, 0);
+		break;
+	case C0Basic_u32:
+		zero = c0_push_basic_u32(p, 0);
+		break;
+	case C0Basic_i64:
+		zero = c0_push_basic_i64(p, 0);
+		break;
+	case C0Basic_u64:
+		zero = c0_push_basic_u64(p, 0);
+		break;
 	case C0Basic_i128:
 	case C0Basic_u128:
-		c0_errorf("todo 128 bit integers");
+		c0_error("todo 128 bit integers");
 		break;
 	default:
-		c0_errorf("invalid type to noti");
+		c0_error("invalid type to noti");
 		break;
 	}
 	return c0_push_neq(p, arg, zero);
@@ -1004,6 +707,9 @@ C0Instr *c0_push_unreachable(C0Proc *p) {
 	c0_use(ret);
 	return c0_instr_push(p, ret);
 }
+
+// TODO(dweiler): In c0_backend_c.c, maybe refactor cdecl to it's own package.
+C0String c0_type_to_cdecl(const C0AggType *type, C0String str, bool ignore_proc_ptr);
 
 C0Instr *c0_push_return(C0Proc *p, C0Instr *arg) {
 	C0Instr *last = c0_instr_last(p);
@@ -1017,16 +723,18 @@ C0Instr *c0_push_return(C0Proc *p, C0Instr *arg) {
 		C0_ASSERT(p->sig);
 		if (arg->agg_type) {
 			if (!c0_types_agg_agg(p->sig->proc.ret, arg->agg_type)) {
-				c0_errorf("mismatching types in return: expected %s, got %s\n", c0_type_to_cdecl(p->arena, p->sig->proc.ret, ""), c0_basic_names[arg->basic_type]);
+				const C0String cdecl = c0_type_to_cdecl(p->sig->proc.ret, C0_SLIT(""), false);
+				c0_error("mismatching types in return: expected %.*s, got %s\n", C0_SFMT(cdecl), c0_basic_names[arg->basic_type]);
 			}
 		} else if (!c0_types_agg_basic(p->sig->proc.ret, arg->basic_type)) {
-			c0_errorf("mismatching types in return: expected %s, got %s\n", c0_type_to_cdecl(p->arena, p->sig->proc.ret, ""), c0_basic_names[arg->basic_type]);
+			const C0String cdecl = c0_type_to_cdecl(p->sig->proc.ret, C0_SLIT(""), false);
+			c0_error("mismatching types in return: expected %.*s, got %s\n", C0_SFMT(cdecl), c0_basic_names[arg->basic_type]);
 		}
 		c0_alloc_args(p, ret, 1);
 		ret->args[0] = c0_use(arg);
 	} else {
 		if (!c0_types_agg_basic(p->sig->proc.ret, C0Basic_void)) {
-			c0_errorf("mismatching types in return: expected void, got %s\n", c0_basic_names[C0Basic_void]);
+			c0_error("mismatching types in return: expected void, got %s\n", c0_basic_names[C0Basic_void]);
 		}
 	}
 	return c0_instr_push(p, ret);
@@ -1051,7 +759,7 @@ C0Instr *c0_push_reinterpret_basic(C0Proc *p, C0BasicType type, C0Instr *arg) {
 		return arg;
 	}
 	if (c0_basic_type_sizes[type] != c0_basic_type_sizes[arg->basic_type]) {
-		c0_errorf("reinterpret requires both types to be of the same size, %s -> %s", c0_basic_names[arg->basic_type], c0_basic_names[type]);
+		c0_error("reinterpret requires both types to be of the same size, %s -> %s", c0_basic_names[arg->basic_type], c0_basic_names[type]);
 	}
 	C0Instr *rip = c0_instr_create(p, C0Instr_reinterpret);
 	c0_alloc_args(p, rip, 1);
@@ -1128,11 +836,12 @@ C0Instr *c0_push_index_ptr(C0Proc *p, C0AggType *array_type, C0Instr *array_ptr,
 	instr->args[1] = c0_use(index);
 	return c0_instr_push(p, instr);
 }
+
 C0Instr *c0_push_field_ptr(C0Proc *p, C0AggType *record_type, C0Instr *record_ptr, u32 field_index) {
 	C0_ASSERT(record_type && record_type->kind == C0AggType_array);
 	C0_ASSERT(record_ptr->basic_type == C0Basic_ptr);
 
-	C0_ASSERT(field_index < c0array_len(record_type->record.types));
+	C0_ASSERT(field_index < c0_array_len(record_type->record.types));
 
 	C0Instr *instr = c0_instr_create(p, C0Instr_field_ptr);
 	instr->agg_type = record_type;
@@ -1203,7 +912,6 @@ C0Instr *c0_push_copy_basic(C0Proc *p, C0Instr *arg) {
 	return instr;
 }
 
-
 C0Instr *c0_push_unaligned_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
 	C0_ASSERT(src->basic_type != C0Basic_void);
 	if (dst->kind == C0Instr_decl) {
@@ -1220,9 +928,11 @@ C0Instr *c0_push_unaligned_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
 	C0Instr *len = c0_push_basic_u32(p, (i32)size);
 	return c0_push_memmove(p, dst, src, len);
 }
+
 C0Instr *c0_push_volatile_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
 	return c0_push_unaligned_store_basic(p, dst, src);
 }
+
 C0Instr *c0_push_unaligned_load_basic(C0Proc *p, C0BasicType type, C0Instr *ptr) {
 	if (ptr->kind == C0Instr_decl) {
 		C0_ASSERT(type == ptr->basic_type);
@@ -1230,23 +940,23 @@ C0Instr *c0_push_unaligned_load_basic(C0Proc *p, C0BasicType type, C0Instr *ptr)
 	}
 	C0_ASSERT(ptr->basic_type == C0Basic_ptr);
 
-	C0Instr *val = c0_push_decl_basic(p, type, {0});
+	C0Instr *val = c0_push_decl_basic(p, type, C0_LIT(C0String));
 	C0Instr *val_ptr = c0_push_addr_of_decl(p, val);
 	i64 size = c0_basic_type_size(p->gen, type);
 	C0Instr *len = c0_push_basic_u32(p, (i32)size);
 	c0_push_memmove(p, val_ptr, ptr, len);
 	return val;
 }
+
 C0Instr *c0_push_volatile_load_basic(C0Proc *p, C0BasicType type, C0Instr *ptr) {
 	return c0_push_unaligned_load_basic(p, type, ptr);
 }
-
-
 
 C0Instr *c0_push_atomic_thread_fence(C0Proc *p) {
 	C0Instr *instr = c0_instr_create(p, C0Instr_atomic_thread_fence);
 	return c0_instr_push(p, instr);
 }
+
 C0Instr *c0_push_atomic_signal_fence(C0Proc *p) {
 	C0Instr *instr = c0_instr_create(p, C0Instr_atomic_signal_fence);
 	return c0_instr_push(p, instr);
@@ -1275,7 +985,6 @@ C0Instr *c0_push_atomic_store_basic(C0Proc *p, C0Instr *dst, C0Instr *src) {
 	return c0_instr_push(p, instr);
 }
 
-
 C0Instr *c0_push_atomic_cas(C0Proc *p, C0Instr *obj, C0Instr *expected, C0Instr *desired) {
 	C0_ASSERT(obj->basic_type == C0Basic_ptr);
 	C0_ASSERT(expected->basic_type == C0Basic_ptr);
@@ -1302,15 +1011,17 @@ C0Instr *c0_push_atomic_bin(C0Proc *p, C0InstrKind kind, C0Instr *dst, C0Instr *
 	return c0_instr_push(p, instr);
 }
 
-
 C0_PUSH_BIN_UINT_DEF(atomic_xchg);
 C0_PUSH_BIN_UINT_DEF(atomic_add);
-C0_PUSH_BIN_FLOAT_DEF(atomic_addf);
 C0_PUSH_BIN_UINT_DEF(atomic_sub);
-C0_PUSH_BIN_FLOAT_DEF(atomic_subf);
 C0_PUSH_BIN_UINT_DEF(atomic_and);
 C0_PUSH_BIN_UINT_DEF(atomic_or);
 C0_PUSH_BIN_UINT_DEF(atomic_xor);
+
+#undef C0_PUSH_BIN_FLOAT_DEF
+
+#undef C0_PUSH_BIN_INT_DEF
+#undef C0_PUSH_BIN_UINT_DEF
 
 C0Instr *c0_push_memmove(C0Proc *p, C0Instr *dst, C0Instr *src, C0Instr *size) {
 	C0_ASSERT(dst->basic_type == C0Basic_ptr);
@@ -1324,9 +1035,8 @@ C0Instr *c0_push_memmove(C0Proc *p, C0Instr *dst, C0Instr *src, C0Instr *size) {
 	instr->args[2] = c0_use(size);
 	c0_use(instr);
 	return c0_instr_push(p, instr);
-
-
 }
+
 C0Instr *c0_push_memset(C0Proc *p, C0Instr *dst, u8 val, C0Instr *size) {
 	C0_ASSERT(dst->basic_type == C0Basic_ptr);
 	C0_ASSERT(c0_basic_type_is_integer(size->basic_type));
@@ -1361,6 +1071,7 @@ C0Instr *c0_push_decl_basic_with_alignment(C0Proc *p, C0BasicType type, C0String
 	instr->alignment = alignment;
 	return c0_instr_push(p, instr);
 }
+
 C0Instr *c0_push_decl_basic(C0Proc *p, C0BasicType type, C0String name) {
 	C0_ASSERT(type != C0Basic_void);
 	C0Instr *instr = c0_instr_create(p, C0Instr_decl);
@@ -1381,6 +1092,7 @@ C0Instr *c0_push_decl_agg_with_alignment(C0Proc *p, C0AggType *type, C0String na
 	instr->alignment = alignment;
 	return c0_instr_push(p, instr);
 }
+
 C0Instr *c0_push_decl_agg(C0Proc *p, C0AggType *type, C0String name) {
 	C0_ASSERT(type);
 	if (type->kind == C0AggType_basic) {
@@ -1410,8 +1122,8 @@ C0Instr *c0_push_select_basic(C0Proc *p, C0Instr *cond, C0Instr *true_case, C0In
 }
 
 static bool c0_is_within_a_loop(C0Proc *p) {
-	usize n = c0array_len(p->nested_blocks);
-	for (usize i = n-1; i < n; i--) {
+	const usize n = c0_array_len(p->nested_blocks);
+	for (usize i = n - 1; i < n; i--) {
 		if (p->nested_blocks[i]->kind == C0Instr_loop) {
 			return true;
 		}
@@ -1424,6 +1136,7 @@ C0Instr *c0_push_continue(C0Proc *p) {
 	C0Instr *instr = c0_instr_create(p, C0Instr_continue);
 	return c0_instr_push(p, instr);
 }
+
 C0Instr *c0_push_break(C0Proc *p) {
 	C0_ASSERT(c0_is_within_a_loop(p));
 	C0Instr *instr = c0_instr_create(p, C0Instr_break);
@@ -1437,31 +1150,30 @@ C0Instr *c0_push_goto(C0Proc *p, C0Instr *label) {
 	instr->args[0] = c0_use(label);
 	return c0_instr_push(p, instr);
 }
+
 C0Instr *c0_push_label(C0Proc *p, C0String name) {
 	// TODO(bill): make name unique if it isn't
 	C0Instr *instr = c0_instr_create(p, C0Instr_label);
-	instr->name = c0_arena_str_dup(p->arena, name);
-	usize n = c0array_len(p->labels);
+	instr->name = c0_string_copy(name);
+	const usize n = c0_array_len(p->labels);
 	for (usize i = 0; i < n; i++) {
-		if (!c0_strings_equal(p->labels[i]->name, name)) {
-			c0_errorf("non-unique label names: %.*s", C0PSTR(name));
+		if (!c0_string_compare(p->labels[i]->name, name)) {
+			c0_error("non-unique label names: %.*s", C0_SFMT(name));
 		}
 	}
-	c0array_push(p->labels, instr);
+	c0_array_push(p->labels, instr);
 	return c0_instr_push(p, instr);
 }
-
 
 ////////////////////////////
 // block
 ////////////////////////////
 
-
-
 C0Instr *c0_push_if(C0Proc *p, C0Instr *cond) {
 	C0Instr *block = c0_instr_create(p, C0Instr_if);
-	c0_alloc_args(p, block, 2); // one for possible else
-	block->args_len = 1;
+
+	block->args = 0;
+	c0_array_resize(block->args, 1);
 	block->args[0] = c0_use(cond);
 	C0_ASSERT(c0_basic_type_is_integer(cond->basic_type));
 
@@ -1478,7 +1190,6 @@ C0Instr *c0_pop_if(C0Proc *p) {
 	return block;
 }
 
-
 C0Instr *c0_block_create(C0Proc *p) {
 	C0Instr *block = c0_instr_create(p, C0Instr_block);
 	return block;
@@ -1491,13 +1202,13 @@ C0Instr *c0_block_start(C0Proc *p, C0Instr *block) {
 	c0_push_nested_block(p, block);
 	return block;
 }
+
 C0Instr *c0_block_push_and_start(C0Proc *p, C0Instr *block) {
 	C0_ASSERT(block->kind == C0Instr_block);
 	c0_use(block);
 	c0_push_nested_block(p, block);
 	return c0_instr_push(p, block);
 }
-
 
 C0Instr *c0_pop_block(C0Proc *p) {
 	C0Instr *block = c0_pop_nested_block(p);
@@ -1519,13 +1230,11 @@ C0Instr *c0_pop_loop(C0Proc *p) {
 	return block;
 }
 
-
-
-
 void c0_push_else_to_if(C0Proc *p, C0Instr *if_stmt, C0Instr *else_stmt) {
+	(void)p;
 	C0_ASSERT(else_stmt);
 	C0_ASSERT(if_stmt->kind == C0Instr_if);
-	if_stmt->args_len = 2; // this is already preallocated for an else
+	c0_array_resize(if_stmt->args, 2);
 	if_stmt->args[1] = c0_use(else_stmt);
 	return;
 }
@@ -1534,19 +1243,20 @@ void c0_block_start_else(C0Proc *p, C0Instr *if_stmt, C0Instr *else_stmt) {
 	c0_block_start(p, else_stmt);
 	c0_push_else_to_if(p, if_stmt, else_stmt);
 }
+
 void c0_block_else_block(C0Proc *p, C0Instr *if_stmt) {
 	C0Instr *else_stmt = c0_block_create(p);
 	c0_block_start(p, else_stmt);
 	c0_push_else_to_if(p, if_stmt, else_stmt);
 }
 
-
 void c0_pass_remove_unused_instructions(C0Array(C0Instr *) *array) {
 	if (!array || !*array) {
 		return;
 	}
-	usize len = c0array_len((*array));
-	for (isize i = len-1; i >= 0; i--) {
+
+	const usize len = c0_array_len(*array);
+	for (usize i = len - 1; i < len; i--) {
 		C0Instr *instr = (*array)[i];
 		if (instr->nested_instrs) {
 			c0_pass_remove_unused_instructions(&instr->nested_instrs);
@@ -1556,16 +1266,17 @@ void c0_pass_remove_unused_instructions(C0Array(C0Instr *) *array) {
 				continue;
 			}
 			if (instr->uses == 0) {
-				for (isize j = 0; j < instr->args_len; j++) {
+				const usize n_args = c0_array_len(instr->args);
+				for (usize j = 0; j < n_args; j++) {
 					c0_unuse(instr->args[j]);
 				}
-				c0array_ordered_remove((*array), i);
+				c0_array_ordered_remove((*array), i);
 				continue;
 			}
 		} else if (instr->kind == C0Instr_if) {
-			if (c0array_len(instr->nested_instrs) == 0) {
-				if (instr->args_len == 1) {
-					c0array_ordered_remove((*array), i);
+			if (c0_array_len(instr->nested_instrs) == 0) {
+				if (c0_array_len(instr->args) == 1) {
+					c0_array_ordered_remove((*array), i);
 					continue;
 				}
 			}
@@ -1574,22 +1285,21 @@ void c0_pass_remove_unused_instructions(C0Array(C0Instr *) *array) {
 }
 
 void c0_assign_reg_id(C0Instr *instr, u32 *reg_id_) {
-	i32 arg_count = c0_instr_arg_count[instr->kind];
-	if (arg_count >= 0) {
-		// validate instruction args_len
-		C0_ASSERT(instr->args_len == arg_count);
+	const i32 arg_count = c0_instr_arg_count[instr->kind];
+	if (arg_count > 0) {
+		C0_ASSERT((i32)c0_array_len(instr->args) == arg_count);
 	} else {
 		switch (instr->kind) {
 		case C0Instr_return:
-			C0_ASSERT(instr->args_len == 0 || instr->args_len == 1);
+			C0_ASSERT(c0_array_len(instr->args) == 0 || c0_array_len(instr->args) == 1);
 			break;
 		case C0Instr_if:
-			C0_ASSERT(instr->args_len == 1 || instr->args_len == 2);
+			C0_ASSERT(c0_array_len(instr->args) == 1 || c0_array_len(instr->args) == 2);
 			break;
 		case C0Instr_call:
 			C0_ASSERT(instr->call_sig);
 			C0_ASSERT(instr->call_sig->kind == C0AggType_proc);
-			C0_ASSERT(instr->args_len == c0array_len(instr->call_sig->proc.types));
+			C0_ASSERT(c0_array_len(instr->args) == c0_array_len(instr->call_sig->proc.types));
 			break;
 		}
 	}
@@ -1598,11 +1308,12 @@ void c0_assign_reg_id(C0Instr *instr, u32 *reg_id_) {
 	}
 
 	if (instr->nested_instrs) {
-		for (isize i = 0; i < c0array_len(instr->nested_instrs); i++) {
+		const usize n_nested_instrs = c0_array_len(instr->nested_instrs);
+		for (usize i = 0; i < n_nested_instrs; i++) {
 			c0_assign_reg_id(instr->nested_instrs[i], reg_id_);
 		}
 	}
-	if (instr->kind == C0Instr_if && instr->args_len == 2) {
+	if (instr->kind == C0Instr_if && c0_array_len(instr->args) == 2) {
 		c0_assign_reg_id(instr->args[1], reg_id_);
 	}
 }
@@ -1621,41 +1332,36 @@ void c0_register_instr_to_gen(C0Gen *gen, C0Instr *instr) {
 		gen->reinterpret_to_generate[instr->args[0]->basic_type][instr->basic_type] = true;
 		break;
 	}
-	if (instr->nested_instrs) {
-		for (isize i = 0; i < c0array_len(instr->nested_instrs); i++) {
-			c0_register_instr_to_gen(gen, instr->nested_instrs[i]);
-		}
+	const usize n_nested_instrs = c0_array_len(instr->nested_instrs);
+	for (usize i = 0; i < n_nested_instrs; i++) {
+		c0_register_instr_to_gen(gen, instr->nested_instrs[i]);
 	}
-	if (instr->kind == C0Instr_if && instr->args_len == 2) {
+	if (instr->kind == C0Instr_if && c0_array_len(instr->args) == 2) {
 		c0_register_instr_to_gen(gen, instr->args[1]);
 	}
 }
 
-
 C0Proc *c0_proc_finish(C0Proc *p) {
 	C0_ASSERT(p->gen);
-	C0_ASSERT(c0array_len(p->nested_blocks) == 0);
+	C0_ASSERT(c0_array_len(p->nested_blocks) == 0);
 
 	c0_pass_remove_unused_instructions(&p->instrs);
 
 	C0Instr *last = c0_instr_last(p);
 	if (c0_is_instruction_terminating(last)) {
 		if (last->kind == C0Instr_if || last->kind == C0Instr_loop) {
-			c0array_push(p->instrs, c0_instr_create(p, C0Instr_unreachable));
+			c0_array_push(p->instrs, c0_instr_create(p, C0Instr_unreachable));
 		}
 	} else if (!c0_types_agg_basic(p->sig->proc.ret, C0Basic_void)) {
-		c0_errorf("procedure missing return statement, expected ??");
+		c0_error("procedure missing return statement, expected ??");
 	}
 
 	u32 reg_id = 0;
-
-	for (isize i = 0; i < c0array_len(p->instrs); i++) {
+	const usize n_instrs = c0_array_len(p->instrs);
+	for (usize i = 0; i < n_instrs; i++) {
 		C0Instr *instr = p->instrs[i];
 		c0_assign_reg_id(instr, &reg_id);
 		c0_register_instr_to_gen(p->gen, instr);
 	}
 	return p;
 }
-
-
-#include "c0_print.c"
